@@ -293,3 +293,20 @@ describe("vente, clôture et réclamation", () => {
       expect(actions).toContain(a);
   });
 });
+
+describe("rapprochements", () => {
+  it("tous les contrôles passent après un cycle complet, y compris avant réclamation", async () => {
+    const { runReconciliation } = await import("@/lib/services/reconciliation");
+    const op = await openOperation(admin);
+    const a = await makeUser();
+    await fund(finance, a.id, 500_000n);
+    await invest({ userId: a.id, operationId: op.id, amount: 500_000n, idempotencyKey: key(), riskAccepted: true, termsVersion: "t" });
+    const open2 = await openOperation(admin, { title: "Autre" });
+    const b = await makeUser();
+    await fund(finance, b.id, 10_000n);
+    await invest({ userId: b.id, operationId: open2.id, amount: 7_500n, idempotencyKey: key(), riskAccepted: true, termsVersion: "t" });
+    await sellAndClose(op.id, 2_100_000n, [1_500_000n]);
+    const checks = await runReconciliation();
+    expect(checks.filter((c) => !c.ok)).toEqual([]);
+  });
+});

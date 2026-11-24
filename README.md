@@ -1,0 +1,77 @@
+# INTERGLOBE — MVP (Phase 2 du cahier des charges)
+
+Plateforme d'investissement participatif dans l'achat, la remise en état et la revente de véhicules.
+Base : *Cahier des charges fonctionnel et technique v1.2 (novembre 2026)*.
+
+**Stack** : Next.js 15 (App Router, Server Actions) · TypeScript · PostgreSQL 16 · Prisma 6 · Tailwind CSS 4 · Vitest.
+
+## Démarrage
+
+```bash
+cp .env.example .env          # adapter DATABASE_URL / TEST_DATABASE_URL
+npm install
+npx prisma migrate deploy     # schéma + triggers d'immuabilité
+npm run db:seed               # données de démonstration (refusé en production)
+npm run dev                   # http://localhost:3000
+```
+
+Comptes de démonstration (mot de passe `Demo2026interglobe`) :
+
+| E-mail | Rôle |
+|---|---|
+| `super@interglobe.test` | Super administrateur |
+| `admin@interglobe.test` | Administrateur |
+| `finance@interglobe.test`, `finance2@interglobe.test` | Responsables financiers (double approbation) |
+| `ama@`, `koffi@`, `awa@interglobe.test` | Investisseurs |
+
+Les données de démo contiennent l'exemple du CDC de bout en bout : opération clôturée, B = 600 000 FCFA, et 540 000 FCFA réclamables par Ama.
+
+## Tests
+
+```bash
+npm test               # 44 tests : unitaires + intégration sur PostgreSQL (TEST_DATABASE_URL)
+npm run lint           # vérification TypeScript
+```
+
+Les tests d'intégration couvrent les critères de recette du §20 : dépôt doublon, double clic, investissements concurrents, plafond, clôture à double approbation, réclamation idempotente, grand livre immuable et équilibré, opération figée après clôture, journal d'audit.
+
+## Ce qui est livré
+
+| CDC | Contenu |
+|---|---|
+| §2 | Règle de partage `B×E/(E+P)×50 %` dans `src/lib/domain/profit-sharing.ts`. Arrondi : la part de l'entreprise est arrondie à l'inférieur (au profit des particuliers), puis répartie au plus fort reste, si bien que la somme des gains égale exactement l'enveloppe. |
+| §2.5 | Règle de perte paramétrable : `UNSET`, `PROPORTIONAL` ou `COMPANY_FIRST_LOSS`. Tant qu'elle vaut `UNSET`, toute clôture déficitaire est **bloquée**. |
+| §3 | Rôles et matrice de permissions (`src/lib/auth/permissions.ts`), avec contrôle des quatre yeux sur les dépenses et la clôture. |
+| §4 | Site public, catalogue filtrable, fiche véhicule, 15 états d'opération et transitions contrôlées avec historique. |
+| §5 | Inscription, vérification par code à usage unique (haché, limité en essais), sessions en base, limitation des tentatives de connexion, historique, « déconnecter toutes les sessions », suspension. |
+| §6 | Grand livre en partie double : triggers PostgreSQL qui interdisent UPDATE/DELETE et imposent des transactions équilibrées, clés d'idempotence, verrous de ligne. Rapprochements visibles sur le tableau de bord. |
+| §7–8 | Investissement atomique (récapitulatif, acceptation des risques enregistrée avec la version des CG, reçu). Dépenses avec justificatifs, mises à jour publiées, vente, clôture (préparation puis validation par une autre personne), « Mes gains » avec le détail du calcul, réclamation qui passe le capital et le gain ou la perte en écritures distinctes. |
+| §12 | Back-office : opérations, dépenses, clôtures, comptes, crédit de dépôt justifié, grand livre, journal d'audit, paramètres, pays. |
+| §15–16 | Interface mobile d'abord en français, en-têtes de sécurité, validation serveur de toutes les opérations, mots de passe hachés (bcrypt). |
+
+## Choix et limites à connaître
+
+- **Dépôts** : en attendant les agents (phase 3), un responsable financier crédite un dépôt reçu en saisissant sa référence externe. Une même référence ne peut être créditée qu'une fois. Chaque investisseur a une référence de dépôt `IG-XXXXXXXX`.
+- **E-mail / SMS** : aucun fournisseur n'est branché. Les codes de vérification sont écrits dans la console serveur et, en développement uniquement, affichés à l'écran (`DEV_SHOW_VERIFICATION_CODES`).
+- **Photos et justificatifs** : on saisit des URL ou des références. Le stockage objet privé avec liens temporaires (§16) reste à faire.
+- **Devise de référence** : XOF (FCFA), montants entiers en `BigInt`. La multi-devise et les taux (§16) relèvent de la phase 3.
+- « Financement atteint » déclenché manuellement sous l'objectif : l'entreprise complète le montant manquant, et sa contribution E augmente d'autant (§2.1).
+- Annulation possible jusqu'à « Financement atteint » ; elle rembourse automatiquement chaque investisseur.
+
+## Reste à faire
+
+- **Phase 3** : pays et devises avec taux, agents et moyens de paiement, demandes de dépôt et de retrait avec preuves et statuts (§9–11), espace agent, commissions, litiges.
+- Réinitialisation du mot de passe par code (modèle déjà prévu), KYC progressif, notifications par e-mail.
+- Stockage privé des documents, sauvegardes, supervision, environnement de staging.
+- Décisions du §22 encore à trancher par le commanditaire (règle de perte, frais, seuils, KYC, contrats).
+
+## Structure
+
+```
+prisma/            schéma, migrations (dont triggers d'immuabilité), seed
+src/lib/domain/    règles pures : partage du bénéfice, états d'opération
+src/lib/ledger/    grand livre en partie double
+src/lib/services/  services métier (transactions SQL, audit, notifications)
+src/app/           pages et actions serveur (public, /espace, /admin)
+tests/             unitaires et intégration
+```
