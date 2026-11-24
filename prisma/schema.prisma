@@ -1,0 +1,443 @@
+// INTERGLOBE — modèle de données (cahier des charges §17)
+// Tous les montants sont des entiers (BigInt) exprimés dans la plus petite
+// unité de la devise de référence (FCFA : pas de décimales).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Comptes & accès ───────────────────────────────
+
+enum Role {
+  INVESTOR
+  AGENT // réservé à la phase 3 (dépôts/retraits par agents)
+  ADMIN
+  FINANCE
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  phone           String?
+  firstName       String
+  lastName        String
+  passwordHash    String
+  countryCode     String
+  country         Country    @relation(fields: [countryCode], references: [code])
+  city            String?
+  role            Role       @default(INVESTOR)
+  status          UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt DateTime?
+  suspendedReason String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sessions          Session[]
+  verificationCodes VerificationCode[]
+  ledgerAccount     LedgerAccount?
+  investments       Investment[]
+  settlements       InvestorSettlement[]
+  notifications     Notification[]
+  loginEvents       LoginEvent[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum VerificationPurpose {
+  EMAIL
+  PASSWORD_RESET
+}
+
+model VerificationCode {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   VerificationPurpose
+  codeHash  String
+  attempts  Int                 @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, purpose])
+}
+
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String
+  success   Boolean
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+}
+
+// ─────────────────────────────── International ───────────────────────────────
+
+model Country {
+  code      String   @id // ISO 3166-1 alpha-2
+  name      String
+  flag      String
+  dialCode  String
+  currency  String // ISO 4217
+  timezone  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────── Véhicules & opérations ───────────────────────────────
+
+model Vehicle {
+  id                String      @id @default(cuid())
+  make              String
+  model             String
+  year              Int?
+  condition         String
+  damageDescription String
+  location          String
+  photos            String[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  operations        Operation[]
+}
+
+enum OperationStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  FUNDING_OPEN
+  FUNDED
+  ACQUISITION
+  REPAIR
+  READY_FOR_SALE
+  ON_SALE
+  SOLD
+  CLOSING_PENDING
+  CLOSED
+  SUSPENDED
+  CANCELLED
+  ARCHIVED
+}
+
+model Operation {
+  id                    String           @id @default(cuid())
+  slug                  String           @unique
+  title                 String
+  description           String
+  risks                 String
+  vehicleId             String
+  vehicle               Vehicle          @relation(fields: [vehicleId], references: [id])
+  status                OperationStatus  @default(DRAFT)
+  statusBeforeSuspend   OperationStatus?
+  // Financement
+  acquisitionBudget     BigInt // budget total prévisionnel (achat + travaux + frais)
+  companyContribution   BigInt // E : apport de l'entreprise
+  investorTarget        BigInt // montant recherché auprès des particuliers
+  investorFunded        BigInt           @default(0) // P courant (maintenu dans la même transaction que l'investissement)
+  minInvestment         BigInt
+  maxPerInvestor        BigInt?
+  estimatedDurationDays Int?
+  // Réalisé
+  acquisitionPrice      BigInt?
+  acquiredAt            DateTime?
+  salePrice             BigInt?
+  soldAt                DateTime?
+  publishedAt           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  budgetLines   BudgetLine[]
+  expenses      OperationExpense[]
+  updates       OperationUpdate[]
+  investments   Investment[]
+  closure       OperationClosure?
+  ledgerAccount LedgerAccount?
+  statusHistory OperationStatusChange[]
+}
+
+model OperationStatusChange {
+  id          String          @id @default(cuid())
+  operationId String
+  operation   Operation       @relation(fields: [operationId], references: [id])
+  from        OperationStatus
+  to          OperationStatus
+  reason      String?
+  actorId     String
+  createdAt   DateTime        @default(now())
+
+  @@index([operationId])
+}
+
+enum ExpenseCategory {
+  ACQUISITION
+  TRANSPORT
+  STORAGE
+  PARTS
+  LABOR
+  ADMIN_FEES
+  TAXES
+  SALE_FEES
+  COMMISSIONS
+  OTHER
+}
+
+model BudgetLine {
+  id          String          @id @default(cuid())
+  operationId String
+  operation   Operation       @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory
+  label       String
+  amount      BigInt
+
+  @@index([operationId])
+}
+
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model OperationExpense {
+  id           String          @id @default(cuid())
+  operationId  String
+  operation    Operation       @relation(fields: [operationId], references: [id])
+  category     ExpenseCategory
+  label        String
+  amount       BigInt
+  supplier     String?
+  documentRef  String? // référence / lien vers la pièce justificative
+  incurredAt   DateTime
+  status       ExpenseStatus   @default(PENDING)
+  createdById  String
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime        @default(now())
+
+  @@index([operationId])
+}
+
+model OperationUpdate {
+  id          String    @id @default(cuid())
+  operationId String
+  operation   Operation @relation(fields: [operationId], references: [id])
+  title       String
+  body        String
+  authorId    String
+  createdAt   DateTime  @default(now())
+
+  @@index([operationId])
+}
+
+enum InvestmentStatus {
+  ACTIVE
+  SETTLED
+  REFUNDED
+}
+
+model Investment {
+  id                  String              @id @default(cuid())
+  userId              String
+  user                User                @relation(fields: [userId], references: [id])
+  operationId         String
+  operation           Operation           @relation(fields: [operationId], references: [id])
+  amount              BigInt
+  status              InvestmentStatus    @default(ACTIVE)
+  riskAcceptedAt      DateTime
+  termsVersion        String
+  ledgerTransactionId String              @unique
+  ledgerTransaction   LedgerTransaction   @relation(fields: [ledgerTransactionId], references: [id])
+  createdAt           DateTime            @default(now())
+  settlement          InvestorSettlement?
+
+  @@index([userId])
+  @@index([operationId])
+}
+
+// ─────────────────────────────── Clôture & règlements ───────────────────────────────
+
+enum ClosureStatus {
+  DRAFT
+  VALIDATED
+}
+
+model OperationClosure {
+  id                      String        @id @default(cuid())
+  operationId             String        @unique
+  operation               Operation     @relation(fields: [operationId], references: [id])
+  status                  ClosureStatus @default(DRAFT)
+  revenue                 BigInt // recettes (prix de vente)
+  totalCosts              BigInt // somme des dépenses approuvées
+  netResult               BigInt // B (peut être négatif)
+  companyContribution     BigInt // E figé à la clôture
+  investorsTotal          BigInt // P figé à la clôture
+  companyTheoreticalShare BigInt
+  companyFinalShare       BigInt
+  investorsEnvelope       BigInt // gain (ou perte, négatif) total des particuliers
+  lossRule                String
+  formulaVersion          String
+  preparedById            String
+  preparedAt              DateTime      @default(now())
+  validatedById           String?
+  validatedAt             DateTime?
+  ledgerTransactionId     String?       @unique
+  settlements             InvestorSettlement[]
+}
+
+enum SettlementStatus {
+  PENDING_VALIDATION
+  CLAIMABLE
+  CLAIMED
+}
+
+model InvestorSettlement {
+  id                  String             @id @default(cuid())
+  closureId           String
+  closure             OperationClosure   @relation(fields: [closureId], references: [id], onDelete: Cascade)
+  investmentId        String             @unique
+  investment          Investment         @relation(fields: [investmentId], references: [id])
+  userId              String
+  user                User               @relation(fields: [userId], references: [id])
+  capital             BigInt
+  result              BigInt // gain (>0) ou perte (<0)
+  claimable           BigInt // capital + result
+  status              SettlementStatus   @default(PENDING_VALIDATION)
+  claimedAt           DateTime?
+  ledgerTransactionId String?            @unique
+  ledgerTransaction   LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id])
+
+  @@index([userId])
+}
+
+// ─────────────────────────────── Grand livre (immuable) ───────────────────────────────
+
+enum LedgerAccountType {
+  USER_WALLET // fonds d'un investisseur (passif de la plateforme)
+  OPERATION_POOL // fonds des particuliers engagés dans une opération
+  COMPANY // contrepartie entreprise (résultat, apports)
+  EXTERNAL // contrepartie des flux entrants/sortants (dépôts, retraits)
+}
+
+model LedgerAccount {
+  id          String            @id @default(cuid())
+  type        LedgerAccountType
+  code        String            @unique
+  userId      String?           @unique
+  user        User?             @relation(fields: [userId], references: [id])
+  operationId String?           @unique
+  operation   Operation?        @relation(fields: [operationId], references: [id])
+  currency    String
+  createdAt   DateTime          @default(now())
+  entries     LedgerEntry[]
+}
+
+enum LedgerTransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  INVESTMENT
+  REFUND
+  CLOSURE_FUNDING
+  CLAIM
+  ADJUSTMENT
+  REVERSAL
+}
+
+model LedgerTransaction {
+  id             String                @id @default(cuid())
+  reference      String                @unique
+  idempotencyKey String                @unique
+  type           LedgerTransactionType
+  description    String
+  createdById    String?
+  reversesId     String?               @unique
+  reverses       LedgerTransaction?    @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy     LedgerTransaction?    @relation("Reversal")
+  createdAt      DateTime              @default(now())
+  entries        LedgerEntry[]
+  investment     Investment?
+  settlement     InvestorSettlement?
+}
+
+model LedgerEntry {
+  id            String            @id @default(cuid())
+  transactionId String
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id])
+  accountId     String
+  account       LedgerAccount     @relation(fields: [accountId], references: [id])
+  // Convention : montant positif = augmentation du solde du compte.
+  // La somme des écritures d'une transaction vaut toujours 0.
+  amount        BigInt
+  memo          String?
+  createdAt     DateTime          @default(now())
+
+  @@index([accountId])
+  @@index([transactionId])
+}
+
+// ─────────────────────────────── Audit & notifications ───────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorRole  String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  reason     String?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
