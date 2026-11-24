@@ -26,6 +26,20 @@ Comptes de démonstration (mot de passe `Demo2026interglobe`) :
 
 Les données de démo contiennent l'exemple du CDC de bout en bout : opération clôturée, B = 600 000 FCFA, et 540 000 FCFA réclamables par Ama.
 
+## Déploiement de test (Vercel + Supabase)
+
+- **Base** : projet Supabase `interglobe-test` (région Paris, eu-west-3). Le schéma est appliqué, les migrations sont enregistrées dans `_prisma_migrations`, et les données de démo sont chargées.
+- **Sécurité Supabase** : l'API REST publique (clé `anon`) n'a accès à aucune table : RLS est activé sans politique et les droits de `anon`/`authenticated` sont retirés. Seul le serveur Next.js y accède, via Prisma.
+- **Vercel** : importer le dépôt, framework Next.js, région `cdg1` (fixée dans `vercel.json`). Variables d'environnement :
+
+| Variable | Valeur |
+|---|---|
+| `DATABASE_URL` | Supabase → Connect → *Transaction pooler* (port 6543), en ajoutant `?pgbouncer=true&connection_limit=1` |
+| `DIRECT_URL` | Supabase → Connect → *Session pooler* (port 5432) |
+| `DEV_SHOW_VERIFICATION_CODES` | `true` sur la version test uniquement (aucun e-mail n'est envoyé) |
+
+Pour une nouvelle migration : `DATABASE_URL=… DIRECT_URL=… npx prisma migrate deploy` depuis un poste qui a accès à Supabase.
+
 ## Tests
 
 ```bash

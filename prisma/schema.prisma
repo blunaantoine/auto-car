@@ -8,7 +8,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL") // Supabase : pooler (port 6543, ?pgbouncer=true)
+  directUrl = env("DIRECT_URL") // Supabase : connexion directe/session (port 5432) pour les migrations
 }
 
 // ─────────────────────────────── Comptes & accès ───────────────────────────────

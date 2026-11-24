@@ -19,7 +19,7 @@ import type { Actor } from "../src/lib/services/types";
 if (process.env.NODE_ENV === "production") throw new Error("Seed interdit en production.");
 
 const prisma = new PrismaClient();
-const PASSWORD = "Demo2026interglobe";
+const PASSWORD = process.env.SEED_PASSWORD || "Demo2026interglobe";
 
 const COUNTRIES = [
   { code: "TG", name: "Togo", flag: "🇹🇬", dialCode: "+228", currency: "XOF", timezone: "Africa/Lome" },
