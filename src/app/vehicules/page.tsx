@@ -25,13 +25,13 @@ export default async function Catalogue({ searchParams }: { searchParams: Promis
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <PageHeader title="Catalogue des véhicules" subtitle="Chaque véhicule est une opération indépendante, avec son propre budget et son propre résultat." />
-      <nav aria-label="Filtrer par état" className="mb-6 flex gap-2 overflow-x-auto">
+      <nav aria-label="Filtrer par état" className="no-scrollbar -mx-4 mb-6 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:px-0">
         {Object.entries(FILTERS).map(([key, f]) => (
           <Link
             key={key}
             href={`/vehicules?filtre=${key}`}
             aria-current={key === active ? "page" : undefined}
-            className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium ring-1 ring-inset ${key === active ? "bg-ink text-white ring-ink" : "bg-white text-gray-700 ring-line hover:bg-gray-50"}`}
+            className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium ring-1 ring-inset transition ${key === active ? "bg-ink text-white shadow-sm ring-ink" : "bg-white text-gray-700 ring-line hover:bg-paper hover:text-ink"}`}
           >
             {f.label}
           </Link>

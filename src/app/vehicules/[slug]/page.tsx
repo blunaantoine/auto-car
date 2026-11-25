@@ -39,16 +39,16 @@ export default async function VehiclePage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <Link href="/vehicules" className="text-sm text-muted hover:text-ink">← Catalogue</Link>
-      <div className="mt-3 mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">{op.title}</h1>
+      <Link href="/vehicules" className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-muted shadow-xs ring-1 ring-inset ring-line transition hover:text-ink">← Catalogue</Link>
+      <div className="mt-4 mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-[1.65rem] font-extrabold leading-tight tracking-tight text-ink sm:text-3xl">{op.title}</h1>
         <StatusBadge status={op.status} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <div className="grid gap-2 overflow-hidden rounded-xl">
-            <div className="aspect-[16/9] bg-gray-100">
+          <div className="grid gap-3 overflow-hidden rounded-2xl">
+            <div className="aspect-[16/9] overflow-hidden rounded-2xl bg-gray-100 ring-1 ring-line/70">
               {v.photos[0] ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={v.photos[0]} alt={`${v.make} ${v.model}`} className="h-full w-full object-cover" />
@@ -57,10 +57,10 @@ export default async function VehiclePage({ params }: { params: Promise<{ slug: 
               )}
             </div>
             {v.photos.length > 1 && (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-3">
                 {v.photos.slice(1, 5).map((p) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={p} src={p} alt="" className="aspect-[4/3] w-full rounded-lg object-cover" />
+                  <img key={p} src={p} alt="" className="aspect-[4/3] w-full rounded-xl object-cover ring-1 ring-line/70" />
                 ))}
               </div>
             )}
@@ -120,7 +120,8 @@ export default async function VehiclePage({ params }: { params: Promise<{ slug: 
             {op.updates.length ? (
               <ol className="space-y-4">
                 {op.updates.map((u) => (
-                  <li key={u.id} className="border-l-2 border-accent pl-4">
+                  <li key={u.id} className="relative border-l-2 border-accent/40 pl-4">
+                    <span aria-hidden className="absolute -left-[7px] top-1.5 h-3 w-3 rounded-full border-2 border-accent bg-white" />
                     <div className="text-xs text-muted">{formatDate(u.createdAt)}</div>
                     <div className="font-semibold text-ink">{u.title}</div>
                     <p className="text-sm whitespace-pre-line text-gray-700">{u.body}</p>
@@ -133,7 +134,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ slug: 
           </Section>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           <div className="card space-y-4">
             <div>
               <div className="flex justify-between text-sm">

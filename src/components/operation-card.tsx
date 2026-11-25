@@ -6,20 +6,27 @@ import { CarPlaceholder, Progress, StatusBadge } from "./ui";
 export function OperationCard({ op }: { op: Operation & { vehicle: Vehicle } }) {
   const remaining = op.investorTarget - op.investorFunded;
   return (
-    <Link href={`/vehicules/${op.slug}`} className="group flex flex-col overflow-hidden rounded-xl border border-line bg-white shadow-xs transition hover:shadow-md">
-      <div className="aspect-[16/9] overflow-hidden bg-gray-100">
+    <Link
+      href={`/vehicules/${op.slug}`}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-line/80 bg-white shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift"
+    >
+      <div className="relative aspect-[16/9] overflow-hidden bg-gray-100">
         {op.vehicle.photos[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={op.vehicle.photos[0]} alt={`${op.vehicle.make} ${op.vehicle.model}`} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+          <img
+            src={op.vehicle.photos[0]}
+            alt={`${op.vehicle.make} ${op.vehicle.model}`}
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          />
         ) : (
           <CarPlaceholder label={`${op.vehicle.make} ${op.vehicle.model}`} />
         )}
-      </div>
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold leading-snug text-ink">{op.title}</h3>
+        <div className="absolute right-3 top-3">
           <StatusBadge status={op.status} />
         </div>
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <h3 className="font-semibold leading-snug text-ink">{op.title}</h3>
         <p className="text-sm text-muted">
           {op.vehicle.year ?? "Année inconnue"} · {op.vehicle.condition} · {op.vehicle.location}
         </p>
@@ -31,7 +38,7 @@ export function OperationCard({ op }: { op: Operation & { vehicle: Vehicle } }) 
             </span>
             <span>{percent(op.investorFunded, op.investorTarget)} %</span>
           </div>
-          {op.status === "FUNDING_OPEN" && <div className="text-xs font-medium text-accent">Reste à financer : {formatMoney(remaining)}</div>}
+          {op.status === "FUNDING_OPEN" && <div className="text-xs font-semibold text-accent">Reste à financer : {formatMoney(remaining)}</div>}
         </div>
       </div>
     </Link>
