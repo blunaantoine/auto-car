@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
-import { logoutAllAction } from "@/app/actions/auth";
+import { changePasswordAction, logoutAllAction } from "@/app/actions/auth";
+import { ActionForm, Field } from "@/components/action-form";
 import { formatDateTime } from "@/lib/labels";
 import { Badge, KeyValue, PageHeader, Section } from "@/components/ui";
 
@@ -27,6 +28,13 @@ export default async function Security() {
             ["Ville", user.city ?? "—"],
             ["Compte vérifié le", formatDateTime(user.emailVerifiedAt)],
           ]} />
+        </Section>
+        <Section title="Changer mon mot de passe">
+          <ActionForm action={changePasswordAction} submitLabel="Modifier le mot de passe">
+            <Field label="Mot de passe actuel" name="current" type="password" autoComplete="current-password" required />
+            <Field label="Nouveau mot de passe" name="next" type="password" autoComplete="new-password" required minLength={10} hint="10 caractères minimum, avec des lettres et des chiffres." />
+            <Field label="Confirmer le nouveau mot de passe" name="confirm" type="password" autoComplete="new-password" required />
+          </ActionForm>
         </Section>
         <Section title="Sessions">
           <p className="text-sm text-muted">{sessions} session(s) active(s). En cas de doute, fermez toutes les sessions : vous devrez vous reconnecter sur chaque appareil.</p>

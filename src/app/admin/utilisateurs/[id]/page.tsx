@@ -5,7 +5,7 @@ import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { formatDateTime, TX_TYPE_LABELS } from "@/lib/labels";
 import { formatMoney, formatSigned } from "@/lib/money";
 import { getWalletHistory, getWalletSummary } from "@/lib/services/wallet";
-import { creditDepositAction, userRoleAction, userStatusAction } from "@/app/actions/admin";
+import { creditDepositAction, resetPasswordAction, updateProfileAction, userRoleAction, userStatusAction, verifyUserAction } from "@/app/actions/admin";
 import { ActionForm, Field, TextArea } from "@/components/action-form";
 import { KeyValue, PageHeader, Section, Stat } from "@/components/ui";
 
@@ -16,7 +16,13 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
   const actor = await requireActor("backoffice.access");
   const user = await prisma.user.findUnique({ where: { id }, include: { country: true, investments: { include: { operation: true }, orderBy: { createdAt: "desc" } } } });
   if (!user) notFound();
-  const [summary, history] = await Promise.all([getWalletSummary(id), getWalletHistory(id, 30)]);
+  const [summary, history, countries] = await Promise.all([
+    getWalletSummary(id),
+    getWalletHistory(id, 30),
+    prisma.country.findMany({ orderBy: { name: "asc" } }),
+  ]);
+  // Un administrateur gère les investisseurs ; le personnel est géré par un super administrateur.
+  const canManage = can(actor.role, "users.manage") && (user.role === "INVESTOR" || can(actor.role, "staff.manage"));
 
   return (
     <>
@@ -76,7 +82,45 @@ export default async function UserDetail({ params }: { params: Promise<{ id: str
               </ActionForm>
             </Section>
           )}
-          {can(actor.role, "users.manage") && user.id !== actor.id && (
+          {canManage && (
+            <Section title="Modifier le profil">
+              <ActionForm action={updateProfileAction} submitLabel="Enregistrer">
+                <input type="hidden" name="userId" value={user.id} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Prénom" name="firstName" defaultValue={user.firstName} required />
+                  <Field label="Nom" name="lastName" defaultValue={user.lastName} required />
+                </div>
+                <Field label="E-mail" name="email" type="email" defaultValue={user.email} required />
+                <Field label="Téléphone" name="phone" defaultValue={user.phone ?? ""} />
+                <div>
+                  <label className="label" htmlFor="countryCode">Pays</label>
+                  <select id="countryCode" name="countryCode" defaultValue={user.countryCode} className="input">
+                    {countries.map((c) => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
+                  </select>
+                </div>
+                <Field label="Ville" name="city" defaultValue={user.city ?? ""} />
+                <TextArea label="Motif" name="reason" rows={2} required />
+              </ActionForm>
+            </Section>
+          )}
+          {canManage && !user.emailVerifiedAt && user.id !== actor.id && (
+            <Section title="Vérifier le compte manuellement">
+              <ActionForm action={verifyUserAction} submitLabel="Marquer comme vérifié">
+                <input type="hidden" name="userId" value={user.id} />
+                <TextArea label="Motif / vérification effectuée" name="reason" rows={2} required />
+              </ActionForm>
+            </Section>
+          )}
+          {can(actor.role, "staff.manage") && user.id !== actor.id && (
+            <Section title="Réinitialiser le mot de passe">
+              <ActionForm action={resetPasswordAction} submitLabel="Générer un mot de passe temporaire" submitClass="btn-danger"
+                confirm="Générer un nouveau mot de passe ? L'ancien ne fonctionnera plus et toutes les sessions de ce compte seront fermées.">
+                <input type="hidden" name="userId" value={user.id} />
+                <TextArea label="Motif" name="reason" rows={2} required />
+              </ActionForm>
+            </Section>
+          )}
+          {canManage && user.id !== actor.id && (
             <Section title={user.status === "SUSPENDED" ? "Réactiver le compte" : "Suspendre le compte"}>
               <ActionForm action={userStatusAction} submitLabel={user.status === "SUSPENDED" ? "Réactiver" : "Suspendre"} submitClass={user.status === "SUSPENDED" ? "btn-primary" : "btn-danger"}>
                 <input type="hidden" name="userId" value={user.id} />

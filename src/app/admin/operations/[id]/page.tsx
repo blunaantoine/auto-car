@@ -21,9 +21,11 @@ import {
   transitionAction,
   updateOperationAction,
   validateClosureAction,
+  editDetailsAction,
+  correctFinancialsAction,
 } from "@/app/actions/admin";
 import { ActionForm, Field, TextArea } from "@/components/action-form";
-import { OperationForm } from "@/components/operation-form";
+import { FinancialsCorrectionForm, OperationDetailsForm, OperationForm } from "@/components/operation-form";
 import { Badge, KeyValue, Notice, PageHeader, Progress, Section, StatusBadge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,10 @@ export default async function AdminOperation({ params }: { params: Promise<{ id:
   const manage = can(actor.role, "operations.manage");
   const transitions = allowedManualTransitions(op.status).filter((s) => s !== "SOLD");
   const editable = manage && (op.status === "DRAFT" || op.status === "IN_REVIEW");
+  const canFixDetails = manage && !editable && op.status !== "ARCHIVED";
+  const canFixMoney =
+    can(actor.role, "operations.correct") && !editable && !op.closure &&
+    !["CLOSED", "ARCHIVED", "CANCELLED"].includes(op.status);
   const locked = ["CLOSED", "ARCHIVED", "CANCELLED", "CLOSING_PENDING"].includes(op.status);
 
   const people = await prisma.user.findMany({
@@ -117,6 +123,25 @@ export default async function AdminOperation({ params }: { params: Promise<{ id:
               </details>
             )}
           </Section>
+
+          {canFixDetails && (
+            <details className="card">
+              <summary className="cursor-pointer text-lg font-semibold text-ink">Corriger la fiche</summary>
+              <p className="mt-2 text-sm text-muted">Photos, textes, informations du véhicule. Les investisseurs sont prévenus et la correction est journalisée.</p>
+              <div className="mt-4"><OperationDetailsForm action={editDetailsAction} op={op} /></div>
+            </details>
+          )}
+
+          {canFixMoney && (
+            <details className="card border-red-200">
+              <summary className="cursor-pointer text-lg font-semibold text-red-800">Corriger les montants (super administrateur)</summary>
+              <p className="mt-2 text-sm text-muted">
+                Pour une erreur de saisie sur une opération déjà publiée. Le montant recherché ne peut pas descendre sous ce qui est
+                déjà investi, et reste figé une fois le financement terminé. Impossible après clôture.
+              </p>
+              <div className="mt-4"><FinancialsCorrectionForm action={correctFinancialsAction} op={op} /></div>
+            </details>
+          )}
 
           {editable && (
             <details className="card">

@@ -61,3 +61,57 @@ export function OperationForm({
     </ActionForm>
   );
 }
+
+type Op = Operation & { vehicle: Vehicle; budgetLines: BudgetLine[] };
+type Act = (s: ActionState, fd: FormData) => Promise<ActionState>;
+
+/** Correction des informations descriptives d'une opération publiée. */
+export function OperationDetailsForm({ action, op }: { action: Act; op: Op }) {
+  const v = op.vehicle;
+  return (
+    <ActionForm action={action} submitLabel="Enregistrer la correction" className="space-y-4">
+      <input type="hidden" name="operationId" value={op.id} />
+      <Field label="Titre" name="title" defaultValue={op.title} required />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Marque" name="make" defaultValue={v.make} required />
+        <Field label="Modèle" name="model" defaultValue={v.model} required />
+        <Field label="Année" name="year" inputMode="numeric" defaultValue={v.year ?? ""} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="État" name="condition" defaultValue={v.condition} required />
+        <Field label="Localisation" name="location" defaultValue={v.location} required />
+        <Field label="Durée estimée (jours)" name="estimatedDurationDays" inputMode="numeric" defaultValue={op.estimatedDurationDays ?? ""} />
+      </div>
+      <TextArea label="Description des dommages" name="damageDescription" defaultValue={v.damageDescription} required />
+      <TextArea label="Description" name="description" defaultValue={op.description} required />
+      <TextArea label="Risques" name="risks" defaultValue={op.risks} required />
+      <TextArea label="Photos (une URL par ligne)" name="photos" defaultValue={v.photos.join("\n")} />
+      <TextArea label="Motif de la correction (visible par les investisseurs)" name="reason" rows={2} required />
+    </ActionForm>
+  );
+}
+
+/** Correction des montants — super administrateur uniquement. */
+export function FinancialsCorrectionForm({ action, op }: { action: Act; op: Op }) {
+  const s = (x: bigint | null | undefined) => (x === null || x === undefined ? "" : x.toString());
+  return (
+    <ActionForm action={action} submitLabel="Corriger les montants" submitClass="btn-danger" className="space-y-4"
+      confirm="Corriger les conditions financières d'une opération publiée ? La correction est journalisée et les investisseurs sont prévenus.">
+      <input type="hidden" name="operationId" value={op.id} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Contribution de l'entreprise (E)" name="companyContribution" inputMode="numeric" defaultValue={s(op.companyContribution)} required />
+        <Field label="Montant recherché auprès des particuliers" name="investorTarget" inputMode="numeric" defaultValue={s(op.investorTarget)} required
+          hint={`Déjà investi : ${s(op.investorFunded)} FCFA — impossible de descendre en dessous.`} />
+        <Field label="Minimum par investissement" name="minInvestment" inputMode="numeric" defaultValue={s(op.minInvestment)} required />
+        <Field label="Plafond par investisseur (facultatif)" name="maxPerInvestor" inputMode="numeric" defaultValue={s(op.maxPerInvestor)} />
+      </div>
+      <p className="text-xs text-muted">Détail du budget (facultatif ; si renseigné, le total doit égaler E + montant recherché)</p>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {BUDGET.map((c) => (
+          <Field key={c} label={EXPENSE_CATEGORY_LABELS[c]} name={`budget_${c}`} inputMode="numeric" defaultValue={s(op.budgetLines.find((l) => l.category === c)?.amount)} />
+        ))}
+      </div>
+      <TextArea label="Motif de la correction (visible par les investisseurs)" name="reason" rows={2} required />
+    </ActionForm>
+  );
+}

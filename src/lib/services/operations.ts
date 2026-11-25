@@ -1,6 +1,6 @@
 // Gestion des véhicules et des opérations — CDC §7.3 et §12.
 import type { ExpenseCategory, OperationStatus } from "@prisma/client";
-import { inTransaction, prisma } from "../db";
+import { inTransaction, prisma, type Tx } from "../db";
 import { canTransition, isFinanciallyLocked, STATUS_LABELS } from "../domain/operation-status";
 import { DomainError } from "../errors";
 import { getOperationPool, getUserWallet, postTransaction } from "../ledger/ledger";
@@ -331,5 +331,143 @@ export async function publishUpdate(actor: Actor, operationId: string, title: st
     for (const { userId } of invs) await notify(tx, userId, `${op.title} : ${title}`, body.slice(0, 200), `/vehicules/${op.slug}`);
     await audit(tx, actor, { action: "operation.update.publish", entityType: "OperationUpdate", entityId: upd.id, after: { title } });
     return upd;
+  });
+}
+
+// ─────────────────────────── Corrections après publication ───────────────────────────
+
+export interface OperationDetailsInput {
+  title: string;
+  description: string;
+  risks: string;
+  make: string;
+  model: string;
+  year: number | null;
+  condition: string;
+  damageDescription: string;
+  location: string;
+  photos: string[];
+  estimatedDurationDays: number | null;
+}
+
+async function notifyInvestors(tx: Tx, operationId: string, title: string, body: string, slug: string) {
+  const invs = await tx.investment.findMany({ where: { operationId }, select: { userId: true }, distinct: ["userId"] });
+  for (const { userId } of invs) await notify(tx, userId, title, body, `/vehicules/${slug}`);
+}
+
+/**
+ * Correction des informations descriptives (photos, textes, véhicule) à tout moment avant archivage.
+ * Les montants ne sont pas concernés. Motif obligatoire, trace d'audit, investisseurs prévenus.
+ */
+export async function editOperationDetails(actor: Actor, operationId: string, input: OperationDetailsInput, reason: string) {
+  requirePermission(actor, "operations.manage");
+  if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif de correction est obligatoire.");
+  return inTransaction(async (tx) => {
+    const op = await tx.operation.findUnique({ where: { id: operationId }, include: { vehicle: true } });
+    if (!op) throw new DomainError("NOT_FOUND", "Opération introuvable.");
+    if (op.status === "ARCHIVED") throw new DomainError("LOCKED", "Une opération archivée ne peut plus être modifiée.");
+    const before = {
+      title: op.title, description: op.description, risks: op.risks, estimatedDurationDays: op.estimatedDurationDays,
+      make: op.vehicle.make, model: op.vehicle.model, year: op.vehicle.year, condition: op.vehicle.condition,
+      damageDescription: op.vehicle.damageDescription, location: op.vehicle.location, photos: op.vehicle.photos,
+    };
+    await tx.vehicle.update({
+      where: { id: op.vehicleId },
+      data: {
+        make: input.make, model: input.model, year: input.year, condition: input.condition,
+        damageDescription: input.damageDescription, location: input.location, photos: input.photos,
+      },
+    });
+    await tx.operation.update({
+      where: { id: op.id },
+      data: { title: input.title, description: input.description, risks: input.risks, estimatedDurationDays: input.estimatedDurationDays },
+    });
+    await audit(tx, actor, { action: "operation.details.correct", entityType: "Operation", entityId: op.id, before, after: input, reason });
+    if (op.status !== "DRAFT" && op.status !== "IN_REVIEW")
+      await notifyInvestors(tx, op.id, `Fiche corrigée : ${input.title}`, `La fiche de l'opération a été mise à jour. Motif : ${reason}`, op.slug);
+  });
+}
+
+export interface OperationFinancialsInput {
+  companyContribution: bigint;
+  investorTarget: bigint;
+  minInvestment: bigint;
+  maxPerInvestor: bigint | null;
+  budgetLines: { category: ExpenseCategory; label: string; amount: bigint }[];
+}
+
+/**
+ * Correction des montants d'une opération publiée — réservée au super administrateur.
+ * Garde-fous : jamais après clôture ; jamais sous le montant déjà investi par les particuliers ;
+ * après la phase de financement, le montant recherché doit rester égal au montant collecté.
+ */
+export async function correctOperationFinancials(actor: Actor, operationId: string, input: OperationFinancialsInput, reason: string) {
+  requirePermission(actor, "operations.correct");
+  if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif de correction est obligatoire.");
+  return inTransaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Operation" WHERE id = ${operationId} FOR UPDATE`;
+    const op = await tx.operation.findUnique({ where: { id: operationId }, include: { closure: true, budgetLines: true } });
+    if (!op) throw new DomainError("NOT_FOUND", "Opération introuvable.");
+    if (op.status === "DRAFT" || op.status === "IN_REVIEW")
+      throw new DomainError("USE_EDIT", "Opération non publiée : utilisez la modification normale de la fiche.");
+    if (isFinanciallyLocked(op.status))
+      throw new DomainError("LOCKED", "Opération clôturée, annulée ou archivée : les montants sont figés (CDC §4).");
+    if (op.closure) throw new DomainError("CLOSURE_DRAFT", "Annulez d'abord le brouillon de clôture.");
+
+    const globalMin = BigInt(await getSetting("MIN_INVESTMENT", tx));
+    if (input.companyContribution < 0n) throw new DomainError("INVALID", "Contribution de l'entreprise invalide.");
+    if (input.investorTarget < op.investorFunded)
+      throw new DomainError("BELOW_FUNDED", `Le montant recherché ne peut pas être inférieur au montant déjà investi (${formatMoney(op.investorFunded)}).`);
+    const effective = op.status === "SUSPENDED" && op.statusBeforeSuspend ? op.statusBeforeSuspend : op.status;
+    const fundingPhase = effective === "PUBLISHED" || effective === "FUNDING_OPEN" || effective === "FUNDED";
+    if (!fundingPhase && input.investorTarget !== op.investorFunded)
+      throw new DomainError("FUNDING_CLOSED", `Le financement est terminé : le montant recherché doit rester égal au montant collecté (${formatMoney(op.investorFunded)}).`);
+    if (input.minInvestment < globalMin) throw new DomainError("INVALID", `Le minimum ne peut pas être inférieur à ${formatMoney(globalMin)}.`);
+    if (input.maxPerInvestor !== null && input.maxPerInvestor < input.minInvestment)
+      throw new DomainError("INVALID", "Le plafond par investisseur est inférieur au minimum.");
+    const budget = input.companyContribution + input.investorTarget;
+    const linesTotal = input.budgetLines.reduce((a, l) => a + l.amount, 0n);
+    if (input.budgetLines.length > 0 && linesTotal !== budget)
+      throw new DomainError("INVALID", `La somme des lignes de budget (${formatMoney(linesTotal)}) doit égaler le budget (${formatMoney(budget)}).`);
+
+    // L'état de financement suit le nouvel objectif.
+    let status = op.status;
+    if (op.status === "FUNDING_OPEN" && input.investorTarget === op.investorFunded && op.investorFunded > 0n) status = "FUNDED";
+    if (op.status === "FUNDED" && input.investorTarget > op.investorFunded) status = "FUNDING_OPEN";
+
+    await tx.budgetLine.deleteMany({ where: { operationId } });
+    await tx.operation.update({
+      where: { id: op.id },
+      data: {
+        companyContribution: input.companyContribution,
+        investorTarget: input.investorTarget,
+        acquisitionBudget: budget,
+        minInvestment: input.minInvestment,
+        maxPerInvestor: input.maxPerInvestor,
+        status,
+        budgetLines: { create: input.budgetLines },
+      },
+    });
+    if (status !== op.status)
+      await tx.operationStatusChange.create({ data: { operationId: op.id, from: op.status, to: status, reason: `Correction : ${reason}`, actorId: actor.id } });
+    await audit(tx, actor, {
+      action: "operation.financials.correct",
+      entityType: "Operation",
+      entityId: op.id,
+      before: {
+        companyContribution: op.companyContribution, investorTarget: op.investorTarget, acquisitionBudget: op.acquisitionBudget,
+        minInvestment: op.minInvestment, maxPerInvestor: op.maxPerInvestor, status: op.status,
+        budgetLines: op.budgetLines.map((l) => ({ category: l.category, amount: l.amount })),
+      },
+      after: { ...input, acquisitionBudget: budget, status },
+      reason,
+    });
+    await notifyInvestors(
+      tx,
+      op.id,
+      `Correction financière : ${op.title}`,
+      `Les conditions financières de l'opération ont été corrigées (contribution de l'entreprise : ${formatMoney(input.companyContribution)}, montant recherché : ${formatMoney(input.investorTarget)}). Motif : ${reason}`,
+      op.slug,
+    );
   });
 }

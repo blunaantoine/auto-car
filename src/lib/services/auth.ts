@@ -7,6 +7,8 @@ import { DomainError } from "../errors";
 import { getUserWallet } from "../ledger/ledger";
 import { audit } from "./audit";
 import { requirePermission, type Actor } from "./types";
+import { can } from "../auth/permissions";
+import type { Role } from "@prisma/client";
 
 let dummyHash: string | null = null;
 const getDummyHash = () => (dummyHash ??= bcrypt.hashSync("interglobe-dummy-password", 12));
@@ -148,9 +150,100 @@ export async function setUserStatus(
   await inTransaction(async (tx) => {
     const u = await tx.user.findUnique({ where: { id: userId } });
     if (!u) throw new DomainError("NOT_FOUND", "Utilisateur introuvable.");
+    assertCanManage(actor, u.role);
     if (status === "ACTIVE" && !u.emailVerifiedAt) throw new DomainError("NOT_VERIFIED", "Le compte n'a pas vérifié son adresse e-mail.");
     await tx.user.update({ where: { id: userId }, data: { status, suspendedReason: status === "SUSPENDED" ? reason : null } });
     if (status === "SUSPENDED") await tx.session.deleteMany({ where: { userId } });
     await audit(tx, actor, { action: `user.${status.toLowerCase()}`, entityType: "User", entityId: userId, before: { status: u.status }, after: { status }, reason });
+  });
+}
+
+// ─────────────────────────── Gestion des comptes par l'administration ───────────────────────────
+
+/** Un administrateur gère les investisseurs ; seuls les super administrateurs gèrent le personnel. */
+function assertCanManage(actor: Actor, targetRole: Role) {
+  if (targetRole !== "INVESTOR" && !can(actor.role, "staff.manage"))
+    throw new DomainError("FORBIDDEN", "Seul un super administrateur peut gérer un compte du personnel.");
+}
+
+export interface ProfileInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  countryCode: string;
+  city: string | null;
+}
+
+export async function updateUserProfile(actor: Actor, userId: string, input: ProfileInput, reason: string) {
+  requirePermission(actor, "users.manage");
+  if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif est obligatoire.");
+  const email = input.email.trim().toLowerCase();
+  await inTransaction(async (tx) => {
+    const u = await tx.user.findUnique({ where: { id: userId } });
+    if (!u) throw new DomainError("NOT_FOUND", "Utilisateur introuvable.");
+    if (u.id !== actor.id) assertCanManage(actor, u.role);
+    const country = await tx.country.findUnique({ where: { code: input.countryCode } });
+    if (!country) throw new DomainError("INVALID", "Pays inconnu.");
+    if (email !== u.email && (await tx.user.findUnique({ where: { email } })))
+      throw new DomainError("EMAIL_TAKEN", "Cette adresse e-mail est déjà utilisée par un autre compte.");
+    const data = { firstName: input.firstName.trim(), lastName: input.lastName.trim(), email, phone: input.phone?.trim() || null, countryCode: country.code, city: input.city?.trim() || null };
+    await tx.user.update({ where: { id: userId }, data });
+    await audit(tx, actor, {
+      action: "user.profile.update",
+      entityType: "User",
+      entityId: userId,
+      before: { firstName: u.firstName, lastName: u.lastName, email: u.email, phone: u.phone, countryCode: u.countryCode, city: u.city },
+      after: data,
+      reason,
+    });
+  });
+}
+
+/** Validation manuelle du compte (ex. code non reçu), après vérification par l'assistance. */
+export async function markEmailVerified(actor: Actor, userId: string, reason: string) {
+  requirePermission(actor, "users.manage");
+  if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif est obligatoire.");
+  await inTransaction(async (tx) => {
+    const u = await tx.user.findUnique({ where: { id: userId } });
+    if (!u) throw new DomainError("NOT_FOUND", "Utilisateur introuvable.");
+    assertCanManage(actor, u.role);
+    if (u.emailVerifiedAt) throw new DomainError("ALREADY", "Ce compte est déjà vérifié.");
+    await tx.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date(), status: u.status === "PENDING_VERIFICATION" ? "ACTIVE" : u.status } });
+    await audit(tx, actor, { action: "user.verify_manual", entityType: "User", entityId: userId, reason });
+  });
+}
+
+/**
+ * Réinitialisation du mot de passe par un super administrateur : génère un mot de passe
+ * temporaire (affiché une seule fois), ferme toutes les sessions du compte.
+ */
+export async function adminResetPassword(actor: Actor, userId: string, reason: string): Promise<string> {
+  requirePermission(actor, "staff.manage");
+  if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif est obligatoire.");
+  if (actor.id === userId) throw new DomainError("SELF", "Utilisez votre propre espace pour changer votre mot de passe.");
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const temp = Array.from({ length: 14 }, () => alphabet[randomInt(alphabet.length)]).join("") + String(randomInt(10));
+  const passwordHash = await bcrypt.hash(temp, 12);
+  await inTransaction(async (tx) => {
+    const u = await tx.user.findUnique({ where: { id: userId } });
+    if (!u) throw new DomainError("NOT_FOUND", "Utilisateur introuvable.");
+    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+    await tx.session.deleteMany({ where: { userId } });
+    await audit(tx, actor, { action: "user.password.reset", entityType: "User", entityId: userId, reason });
+  });
+  return temp;
+}
+
+/** Changement de son propre mot de passe (tout utilisateur connecté). */
+export async function changeOwnPassword(userId: string, current: string, next: string) {
+  const err = validatePassword(next);
+  if (err) throw new DomainError("WEAK_PASSWORD", err);
+  const u = await prisma.user.findUnique({ where: { id: userId } });
+  if (!u || !(await bcrypt.compare(current, u.passwordHash))) throw new DomainError("BAD_CREDENTIALS", "Mot de passe actuel incorrect.");
+  const passwordHash = await bcrypt.hash(next, 12);
+  await inTransaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+    await audit(tx, { id: userId, role: u.role }, { action: "user.password.change", entityType: "User", entityId: userId });
   });
 }

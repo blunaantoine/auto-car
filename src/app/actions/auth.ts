@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { runAction, type ActionState } from "@/lib/actions";
 import { clearSessionCookie, getSessionToken, requestMeta, requireUser, setSessionCookie } from "@/lib/auth/session";
-import { issueCode, login, logout, logoutAll, register, verifyEmail } from "@/lib/services/auth";
+import { changeOwnPassword, issueCode, login, logout, logoutAll, register, verifyEmail } from "@/lib/services/auth";
+import { DomainError } from "@/lib/errors";
 import { formObject } from "@/lib/validation";
 
 const registerSchema = z.object({
@@ -74,4 +75,14 @@ export async function logoutAllAction() {
   await logoutAll(user.id);
   await clearSessionCookie();
   redirect("/connexion?deconnecte=1");
+}
+
+export async function changePasswordAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requireUser();
+    const next = String(fd.get("next") ?? "");
+    if (next !== String(fd.get("confirm") ?? "")) throw new DomainError("MISMATCH", "Les nouveaux mots de passe ne correspondent pas.");
+    await changeOwnPassword(user.id, String(fd.get("current") ?? ""), next);
+    return "Mot de passe modifié.";
+  });
 }

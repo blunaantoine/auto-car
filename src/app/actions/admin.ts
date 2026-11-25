@@ -19,11 +19,13 @@ import {
   reviewExpense,
   transitionOperation,
   updateOperation,
+  editOperationDetails,
+  correctOperationFinancials,
   type OperationInput,
 } from "@/lib/services/operations";
 import { discardClosureDraft, prepareClosure, validateClosure } from "@/lib/services/closure";
 import { creditDeposit } from "@/lib/services/wallet";
-import { setUserStatus } from "@/lib/services/auth";
+import { adminResetPassword, markEmailVerified, setUserStatus, updateUserProfile } from "@/lib/services/auth";
 import { updateSetting, type SettingKey } from "@/lib/services/settings";
 import { audit } from "@/lib/services/audit";
 import { dateField, formObject, moneyField, optionalMoneyField } from "@/lib/validation";
@@ -47,6 +49,17 @@ const operationSchema = z.object({
   maxPerInvestor: optionalMoneyField("Plafond"),
   estimatedDurationDays: z.string().transform((v) => (v.trim() ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v > 0), "Durée invalide"),
 });
+
+function parseBudgetLines(fd: FormData) {
+  const budgetLines = BUDGET_CATEGORIES.flatMap((category) => {
+    const raw = str(fd, `budget_${category}`);
+    if (!raw) return [];
+    const amount = parseMoney(raw);
+    if (amount === null) throw new DomainError("INVALID", `Budget « ${EXPENSE_CATEGORY_LABELS[category]} » invalide.`);
+    return amount > 0n ? [{ category, label: EXPENSE_CATEGORY_LABELS[category], amount }] : [];
+  });
+  return { budgetLines };
+}
 
 function parseOperation(fd: FormData): OperationInput {
   const d = operationSchema.parse(formObject(fd));
@@ -253,5 +266,75 @@ export async function countryAction(_: ActionState, fd: FormData): Promise<Actio
     });
     revalidatePath("/admin/parametres");
     return "Pays enregistré.";
+  });
+}
+
+// ─────────────────────────── Corrections d'opération ───────────────────────────
+
+const detailsSchema = operationSchema.pick({
+  title: true, description: true, risks: true, make: true, model: true, year: true,
+  condition: true, damageDescription: true, location: true, photos: true, estimatedDurationDays: true,
+});
+
+export async function editDetailsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.manage");
+    const id = str(fd, "operationId");
+    await editOperationDetails(actor, id, detailsSchema.parse(formObject(fd)), str(fd, "reason"));
+    revalidatePath(`/admin/operations/${id}`);
+    return "Fiche corrigée. Les investisseurs de l'opération ont été prévenus.";
+  });
+}
+
+const financialsSchema = operationSchema.pick({ companyContribution: true, investorTarget: true, minInvestment: true, maxPerInvestor: true });
+
+export async function correctFinancialsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.correct");
+    const id = str(fd, "operationId");
+    const d = financialsSchema.parse(formObject(fd));
+    const { budgetLines } = parseBudgetLines(fd);
+    await correctOperationFinancials(actor, id, { ...d, budgetLines }, str(fd, "reason"));
+    revalidatePath(`/admin/operations/${id}`);
+    return "Montants corrigés. La correction est journalisée et les investisseurs ont été prévenus.";
+  });
+}
+
+// ─────────────────────────── Gestion des comptes ───────────────────────────
+
+const profileSchema = z.object({
+  firstName: z.string().trim().min(1, "Prénom requis").max(80),
+  lastName: z.string().trim().min(1, "Nom requis").max(80),
+  email: z.string().trim().email("Adresse e-mail invalide"),
+  phone: z.string().trim().max(30).optional().transform((v) => v || null),
+  countryCode: z.string().length(2, "Pays requis"),
+  city: z.string().trim().max(80).optional().transform((v) => v || null),
+});
+
+export async function updateProfileAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("users.manage");
+    const userId = str(fd, "userId");
+    await updateUserProfile(actor, userId, profileSchema.parse(formObject(fd)), str(fd, "reason"));
+    revalidatePath(`/admin/utilisateurs/${userId}`);
+    return "Profil mis à jour.";
+  });
+}
+
+export async function verifyUserAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("users.manage");
+    const userId = str(fd, "userId");
+    await markEmailVerified(actor, userId, str(fd, "reason"));
+    revalidatePath(`/admin/utilisateurs/${userId}`);
+    return "Compte vérifié et activé.";
+  });
+}
+
+export async function resetPasswordAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("staff.manage");
+    const temp = await adminResetPassword(actor, str(fd, "userId"), str(fd, "reason"));
+    return `Mot de passe temporaire : ${temp} — communiquez-le à l'utilisateur par un canal sûr. Il ne sera plus affiché.`;
   });
 }
