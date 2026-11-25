@@ -14,12 +14,18 @@ export default function HowItWorks() {
           ["3. Achat et travaux", "Une fois le financement réuni et validé, l'entreprise achète le véhicule et réalise les travaux. Chaque dépense est enregistrée avec son justificatif et validée par une seconde personne. Les étapes sont publiées dans votre espace."],
           ["4. Vente et clôture financière", "Le véhicule est mis en vente. La vente seule ne crédite personne : elle ouvre la clôture financière. Les recettes et toutes les dépenses réelles sont vérifiées, le résultat net est calculé puis validé par un second responsable."],
           ["5. Réclamation et réinvestissement", "Dans « Mes gains », vous voyez votre capital, votre part du résultat et le détail du calcul. Un clic sur « Réclamer mon capital et mes gains » crédite votre portefeuille. Vous pouvez ensuite réinvestir."],
-        ].map(([t, d]) => (
-          <section key={t} className="card">
-            <h2 className="font-semibold text-ink">{t}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-gray-700">{d}</p>
-          </section>
-        ))}
+        ].map(([t, d]) => {
+          const [num, ...rest] = t.split(". ");
+          return (
+            <section key={t} className="card transition-shadow duration-200 hover:shadow-lift">
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-linear-to-br from-accent to-teal-600 text-sm font-bold text-white shadow-sm" aria-hidden>{num}</span>
+                <h2 className="font-semibold text-ink">{rest.join(". ")}</h2>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-gray-700">{d}</p>
+            </section>
+          );
+        })}
 
         <section className="card">
           <h2 className="font-semibold text-ink">La règle de partage du bénéfice</h2>
