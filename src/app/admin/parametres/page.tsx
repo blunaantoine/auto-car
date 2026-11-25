@@ -5,6 +5,8 @@ import { LOSS_RULE_LABELS, LOSS_RULES } from "@/lib/domain/profit-sharing";
 import { getAllSettings } from "@/lib/services/settings";
 import { formatMoney } from "@/lib/money";
 import { countryAction, settingAction } from "@/app/actions/admin";
+import { addRateAction } from "@/app/actions/deposits";
+import { formatDateTime } from "@/lib/labels";
 import { ActionForm, Field } from "@/components/action-form";
 import { Badge, KeyValue, Notice, PageHeader, Section } from "@/components/ui";
 
@@ -13,7 +15,11 @@ export const metadata = { title: "Paramètres" };
 
 export default async function SettingsPage() {
   const actor = await requireActor("backoffice.access");
-  const [settings, countries] = await Promise.all([getAllSettings(), prisma.country.findMany({ orderBy: { name: "asc" } })]);
+  const [settings, countries, rates] = await Promise.all([
+    getAllSettings(),
+    prisma.country.findMany({ orderBy: { name: "asc" } }),
+    prisma.exchangeRate.findMany({ orderBy: { effectiveAt: "desc" }, take: 30 }),
+  ]);
   const canEdit = can(actor.role, "settings.manage");
   return (
     <>
@@ -25,6 +31,8 @@ export default async function SettingsPage() {
             ["Dépôt minimum", formatMoney(settings.MIN_DEPOSIT)],
             ["Investissement minimum", formatMoney(settings.MIN_INVESTMENT)],
             ["Version des conditions", settings.TERMS_VERSION],
+            ["Seuil de validation financière des dépôts", formatMoney(settings.DEPOSIT_REVIEW_THRESHOLD)],
+            ["Expiration d'une demande de dépôt", `${settings.DEPOSIT_EXPIRY_HOURS} h`],
           ]} />
           {settings.LOSS_RULE === "UNSET" && <div className="mt-4"><Notice tone="warning">Aucune règle de perte approuvée : la clôture d&apos;une opération déficitaire est bloquée.</Notice></div>}
           {canEdit ? (
@@ -37,6 +45,8 @@ export default async function SettingsPage() {
                     <option value="MIN_DEPOSIT">Dépôt minimum</option>
                     <option value="MIN_INVESTMENT">Investissement minimum</option>
                     <option value="TERMS_VERSION">Version des conditions</option>
+                    <option value="DEPOSIT_REVIEW_THRESHOLD">Seuil de validation des dépôts (FCFA)</option>
+                    <option value="DEPOSIT_EXPIRY_HOURS">Expiration des demandes de dépôt (heures)</option>
                   </select>
                 </div>
                 <Field label="Valeur" name="value" required list="loss-rules" />
@@ -47,6 +57,28 @@ export default async function SettingsPage() {
             </ActionForm>
           ) : (
             <p className="mt-4 text-xs text-muted">Seul un super administrateur peut modifier ces paramètres.</p>
+          )}
+        </Section>
+
+        <Section title="Taux de change">
+          <p className="mb-3 text-sm text-muted">1 unité de la devise = x FCFA. XOF et XAF sont à parité fixe. Un nouveau taux s&apos;applique aux nouvelles demandes ; les demandes passées gardent leur taux.</p>
+          <ul className="divide-y divide-line text-sm">
+            {rates.map((r) => (
+              <li key={r.id} className="flex justify-between gap-2 py-2">
+                <span><strong>1 {r.currency}</strong> = {r.rateToRef.toString()} FCFA <span className="text-xs text-muted">· {r.source}</span></span>
+                <span className="text-xs text-muted">{formatDateTime(r.effectiveAt)}</span>
+              </li>
+            ))}
+            {!rates.length && <li className="py-2 text-muted">Aucun taux saisi (seules les devises FCFA sont utilisables).</li>}
+          </ul>
+          {can(actor.role, "rates.manage") && (
+            <ActionForm action={addRateAction} submitLabel="Ajouter le taux" className="mt-4 space-y-3 border-t border-line pt-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Devise" name="currency" required maxLength={3} placeholder="GHS" />
+                <Field label="1 unité = … FCFA" name="rate" required inputMode="decimal" placeholder="52.35" />
+                <Field label="Source" name="source" required placeholder="BCEAO, 25/11/2026" />
+              </div>
+            </ActionForm>
           )}
         </Section>
 

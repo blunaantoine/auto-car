@@ -62,9 +62,9 @@ export async function submitDeposit(input: SubmitDepositInput) {
   const hours = Number(await getSetting("DEPOSIT_EXPIRY_HOURS"));
 
   return inTransaction(async (tx) => {
-    // Anti-fraude : une même référence d'opérateur ne peut servir qu'une fois (§9.5).
+    // Anti-fraude : une même référence de transaction ne peut servir qu'une fois, tous opérateurs confondus (§9.5).
     const dup = await tx.depositRequest.findFirst({
-      where: { provider: method.provider, payerReference, status: { in: [...ACTIVE_STATUSES] } },
+      where: { payerReference, status: { in: [...ACTIVE_STATUSES] } },
     });
     if (dup) throw new DomainError("DUPLICATE_REFERENCE", "Cette référence de transaction a déjà été déclarée.");
     const open = await tx.depositRequest.count({ where: { userId: user.id, status: { in: ["AWAITING_AGENT", "CONFIRMED_BY_AGENT"] } } });

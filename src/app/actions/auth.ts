@@ -38,7 +38,7 @@ export async function loginAction(_: ActionState, fd: FormData): Promise<ActionS
     const { user, token } = await login(String(fd.get("email") ?? ""), String(fd.get("password") ?? ""), await requestMeta());
     await setSessionCookie(token);
     const next = String(fd.get("next") ?? "");
-    target = !user.emailVerifiedAt ? "/verification" : next.startsWith("/") && !next.startsWith("//") ? next : user.role === "INVESTOR" ? "/espace" : "/admin";
+    target = !user.emailVerifiedAt ? "/verification" : next.startsWith("/") && !next.startsWith("//") ? next : user.role === "INVESTOR" ? "/espace" : user.role === "AGENT" ? "/agent" : "/admin";
   });
   if (target) redirect(target);
   return res;

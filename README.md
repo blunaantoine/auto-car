@@ -67,9 +67,20 @@ Les tests d'intégration couvrent les critères de recette du §20 : dépôt dou
 | §12 | Back-office : opérations, dépenses, clôtures, comptes, crédit de dépôt justifié, grand livre, journal d'audit, paramètres, pays. |
 | §15–16 | Interface mobile d'abord en français, en-têtes de sécurité, validation serveur de toutes les opérations, mots de passe hachés (bcrypt). |
 
+## Dépôts par agents locaux (CDC §9, §11)
+
+1. L'investisseur choisit son pays, un agent et un moyen de paiement (Flooz, T-Money, MTN MoMo…), voit les coordonnées, les frais, le taux et le montant qui sera crédité.
+2. Il paie hors plateforme, puis déclare la référence de transaction (capture facultative, stockée en privé).
+3. L'agent (rôle `AGENT`, espace `/agent`) vérifie la réception réelle et confirme ou rejette. Il ne voit que ses propres demandes.
+4. Sous le seuil `DEPOSIT_REVIEW_THRESHOLD` (500 000 FCFA par défaut), le portefeuille est crédité immédiatement ; au-delà, un responsable financier valide dans `/admin/depots`.
+
+Contrôles : référence de transaction unique, expiration (`DEPOSIT_EXPIRY_HOURS`, 72 h), litige, crédit idempotent, taux figé à la demande et historisé (jamais modifié). Les montants en attente ne sont pas investissables.
+Agents de démonstration : `agent.lome@interglobe.test` (Togo), `agent.cotonou@interglobe.test` (Bénin).
+
 ## Choix et limites à connaître
 
-- **Dépôts** : en attendant les agents (phase 3), un responsable financier crédite un dépôt reçu en saisissant sa référence externe. Une même référence ne peut être créditée qu'une fois. Chaque investisseur a une référence de dépôt `IG-XXXXXXXX`.
+- **Dépôts** : par agents locaux (ci-dessus). Le crédit manuel par un responsable financier reste disponible pour les cas exceptionnels.
+- **Retraits** par agents et **commissions** d'agents : pas encore réalisés.
 - **E-mail / SMS** : aucun fournisseur n'est branché. Les codes de vérification sont écrits dans la console serveur et, en développement uniquement, affichés à l'écran (`DEV_SHOW_VERIFICATION_CODES`).
 - **Photos et justificatifs** : on saisit des URL ou des références. Le stockage objet privé avec liens temporaires (§16) reste à faire.
 - **Devise de référence** : XOF (FCFA), montants entiers en `BigInt`. La multi-devise et les taux (§16) relèvent de la phase 3.

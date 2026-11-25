@@ -166,7 +166,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ slug: 
               ) : !user.emailVerifiedAt || user.status !== "ACTIVE" ? (
                 <Notice tone="warning">Votre compte doit être vérifié pour investir. <Link href="/verification" className="font-semibold underline">Vérifier mon compte</Link></Notice>
               ) : wallet!.available < min ? (
-                <Notice>Votre solde disponible ({formatMoney(wallet!.available)}) est inférieur au minimum. <Link href="/espace" className="font-semibold underline">Alimenter mon portefeuille</Link></Notice>
+                <Notice>Votre solde disponible ({formatMoney(wallet!.available)}) est inférieur au minimum. <Link href="/espace/depot" className="font-semibold underline">Alimenter mon portefeuille</Link></Notice>
               ) : (
                 <InvestForm
                   operationId={op.id}

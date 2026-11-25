@@ -560,5 +560,5 @@ model DepositRequest {
 
   @@index([agentId, status])
   @@index([userId])
-  @@index([provider, payerReference])
+  @@index([payerReference])
 }

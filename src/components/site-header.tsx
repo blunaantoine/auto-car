@@ -16,7 +16,8 @@ export async function SiteHeader() {
           <Link href="/vehicules" className="whitespace-nowrap hover:text-accent">Véhicules</Link>
           <Link href="/comment-ca-marche" className="whitespace-nowrap hover:text-accent">Comment ça marche</Link>
           <Link href="/risques" className="whitespace-nowrap hover:text-accent">Risques</Link>
-          {user && <Link href="/espace" className="whitespace-nowrap hover:text-accent">Mon espace</Link>}
+          {user && user.role !== "AGENT" && <Link href="/espace" className="whitespace-nowrap hover:text-accent">Mon espace</Link>}
+          {user?.role === "AGENT" && <Link href="/agent" className="whitespace-nowrap hover:text-accent">Espace agent</Link>}
           {user && can(user.role, "backoffice.access") && <Link href="/admin" className="whitespace-nowrap hover:text-accent">Administration</Link>}
         </nav>
         <div className="flex items-center gap-2">

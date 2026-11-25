@@ -60,10 +60,9 @@ export default async function WalletPage({ searchParams }: { searchParams: Promi
         <div className="space-y-6">
           <Section title="Alimenter mon portefeuille">
             <div className="space-y-3 text-sm text-gray-700">
-              <p>Dépôt minimum : <strong>2 500 FCFA</strong>. Votre référence de dépôt personnelle :</p>
-              <p className="rounded-lg bg-paper px-3 py-2 text-center font-mono text-lg font-bold tracking-wider text-ink">{depositRef}</p>
-              <p>Indiquez-la dans le motif de votre transfert, puis transmettez la référence de transaction à l&apos;assistance. Le portefeuille est crédité uniquement après vérification de la réception effective des fonds.</p>
-              <p className="text-xs text-muted">Les dépôts et retraits par agents locaux dans votre pays arrivent prochainement.</p>
+              <p>Déposez par un agent local de votre pays (Mobile Money, virement…). Dépôt minimum : <strong>2 500 FCFA</strong>.</p>
+              <Link href="/espace/depot" className="btn-accent w-full">Effectuer un dépôt</Link>
+              <p className="text-xs text-muted">Votre référence personnelle : <span className="font-mono">{depositRef}</span></p>
             </div>
           </Section>
 

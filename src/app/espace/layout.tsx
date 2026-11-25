@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 const LINKS = [
   ["/espace", "Portefeuille"],
+  ["/espace/depot", "Dépôt"],
   ["/espace/investissements", "Mes investissements"],
   ["/espace/gains", "Mes gains"],
   ["/espace/securite", "Sécurité"],

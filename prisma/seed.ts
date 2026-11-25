@@ -15,6 +15,8 @@ import {
 } from "../src/lib/services/operations";
 import { claimSettlement, prepareClosure, validateClosure } from "../src/lib/services/closure";
 import type { Actor } from "../src/lib/services/types";
+import { addPaymentMethod } from "../src/lib/services/agents";
+import { submitDeposit } from "../src/lib/services/deposits";
 
 if (process.env.NODE_ENV === "production") throw new Error("Seed interdit en production.");
 
@@ -140,8 +142,25 @@ async function main() {
   // 4. Brouillon
   await createOperation(admin, op({ title: "Nissan Almera 2014 — Abidjan", make: "Nissan", model: "Almera", year: 2014, location: "Abidjan", budgetLines: [] }));
 
+  // 5. Agents locaux de dépôt (Togo, Bénin) et une demande en attente
+  const agentTG = await user("agent.lome@interglobe.test", "Kossi", "Amegah", "AGENT");
+  const agentBJ = await user("agent.cotonou@interglobe.test", "Rachida", "Bio", "AGENT", "BJ");
+  const kossi = await prisma.agent.create({
+    data: { userId: agentTG.id, displayName: "Kossi Services — Lomé", countryCode: "TG", city: "Lomé", zone: "Bè, Tokoin", hours: "Lun–Sam, 8h–19h", status: "ACTIVE",
+      instructions: "Indiquez votre référence IG-… dans le motif. Les dépôts reçus après 19h sont traités le lendemain matin." },
+  });
+  const rachida = await prisma.agent.create({
+    data: { userId: agentBJ.id, displayName: "Cotonou Cash", countryCode: "BJ", city: "Cotonou", zone: "Cadjèhoun", hours: "Lun–Ven, 9h–18h", status: "ACTIVE" },
+  });
+  await addPaymentMethod(admin, kossi.id, { provider: "Flooz (Moov)", accountName: "Kossi Amegah", accountNumber: "+228 99 12 34 56", currency: "XOF", minAmount: 2_500n, maxAmount: 2_000_000n, feeFixed: 0n, feeBps: 0, delay: "15 min à 2 h" });
+  await addPaymentMethod(admin, kossi.id, { provider: "T-Money (Togocom)", accountName: "Kossi Amegah", accountNumber: "+228 90 12 34 56", currency: "XOF", minAmount: 2_500n, maxAmount: 1_000_000n, feeFixed: 0n, feeBps: 100, delay: "15 min à 2 h" });
+  await addPaymentMethod(admin, rachida.id, { provider: "MTN Mobile Money", accountName: "Rachida Bio", accountNumber: "+229 97 00 11 22", currency: "XOF", minAmount: 5_000n, maxAmount: 1_500_000n, feeFixed: 100n, feeBps: 0, delay: "30 min" });
+  const flooz = await prisma.agentPaymentMethod.findFirstOrThrow({ where: { agentId: kossi.id, provider: { startsWith: "Flooz" } } });
+  await submitDeposit({ userId: awa.id, methodId: flooz.id, amountLocal: 75_000n, payerReference: "MP251125.0915.D44021" });
+
   console.log("\nDonnées de démonstration créées. Mot de passe commun :", PASSWORD);
   console.log("  super@interglobe.test (super admin), admin@, finance@, finance2@, ama@, koffi@, awa@interglobe.test");
+  console.log("  agents : agent.lome@interglobe.test, agent.cotonou@interglobe.test");
   void superAdmin;
 }
 

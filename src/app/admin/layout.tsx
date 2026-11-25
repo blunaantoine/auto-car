@@ -8,6 +8,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     ["/admin", "Tableau de bord", true],
     ["/admin/operations", "Opérations", true],
     ["/admin/utilisateurs", "Investisseurs", can(actor.role, "users.manage") || can(actor.role, "wallet.credit")],
+    ["/admin/depots", "Dépôts", true],
+    ["/admin/agents", "Agents", true],
     ["/admin/grand-livre", "Grand livre", can(actor.role, "ledger.read")],
     ["/admin/journal", "Journal d'audit", can(actor.role, "audit.read")],
     ["/admin/parametres", "Paramètres", true],

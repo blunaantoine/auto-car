@@ -110,9 +110,12 @@ describe("parcours de dépôt", () => {
     expect(await walletBalance(investor.id)).toBe(99_990n);
   });
 
-  it("une même référence d'opérateur ne peut pas être déclarée deux fois", async () => {
+  it("une même référence ne peut pas être déclarée deux fois, même chez un autre opérateur", async () => {
     await submit({ payerReference: "MP12345" });
     expect(await code(submit({ payerReference: " mp12345 " }))).toBe("DUPLICATE_REFERENCE");
+    await addPaymentMethod(admin, agentId, { provider: "T-Money", accountName: "A", accountNumber: "2", currency: "XOF", minAmount: 2_500n, maxAmount: null, feeFixed: 0n, feeBps: 0, delay: null });
+    const tm = await prisma.agentPaymentMethod.findFirstOrThrow({ where: { provider: "T-Money" } });
+    expect(await code(submit({ methodId: tm.id, payerReference: "MP12345" }))).toBe("DUPLICATE_REFERENCE");
   });
 
   it("un agent ne voit ni ne traite les demandes d'un autre agent", async () => {
