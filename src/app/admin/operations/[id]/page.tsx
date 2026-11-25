@@ -24,6 +24,7 @@ import {
   editDetailsAction,
   correctFinancialsAction,
   uploadPhotoAction,
+  addPhotoLinkAction,
   removePhotoAction,
   coverPhotoAction,
 } from "@/app/actions/admin";
@@ -137,6 +138,7 @@ export default async function AdminOperation({ params }: { params: Promise<{ id:
                 max={MAX_PHOTOS}
                 enabled={storageConfigured()}
                 upload={uploadPhotoAction}
+                addLink={addPhotoLinkAction}
                 remove={removePhotoAction}
                 cover={coverPhotoAction}
               />

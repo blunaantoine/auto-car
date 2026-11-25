@@ -524,3 +524,31 @@ export async function setCoverPhoto(actor: Actor, operationId: string, url: stri
     await audit(tx, actor, { action: "operation.photo.cover", entityType: "Operation", entityId: op.id, after: { url } });
   });
 }
+
+/** Normalise et vérifie un lien de photo externe (http/https uniquement). */
+export function normalizePhotoUrl(raw: string): string {
+  const value = raw.trim();
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    throw new DomainError("BAD_URL", "Lien invalide : il doit commencer par https:// (ou http://).");
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") throw new DomainError("BAD_URL", "Seuls les liens http:// ou https:// sont acceptés.");
+  if (value.length > 2000) throw new DomainError("BAD_URL", "Lien trop long.");
+  return u.toString();
+}
+
+/** Ajoute une photo par son lien (image hébergée ailleurs). */
+export async function addOperationPhotoUrl(actor: Actor, operationId: string, rawUrl: string) {
+  requirePermission(actor, "operations.manage");
+  const url = normalizePhotoUrl(rawUrl);
+  await inTransaction(async (tx) => {
+    const { op, vehicle } = await photoTarget(tx, operationId);
+    if (vehicle.photos.length >= MAX_PHOTOS) throw new DomainError("TOO_MANY", `${MAX_PHOTOS} photos maximum par véhicule.`);
+    if (vehicle.photos.includes(url)) throw new DomainError("DUPLICATE", "Cette photo est déjà sur la fiche.");
+    await tx.vehicle.update({ where: { id: vehicle.id }, data: { photos: [...vehicle.photos, url] } });
+    await audit(tx, actor, { action: "operation.photo.add_link", entityType: "Operation", entityId: op.id, after: { url } });
+  });
+  return url;
+}

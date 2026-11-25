@@ -22,8 +22,10 @@ import {
   editOperationDetails,
   correctOperationFinancials,
   addOperationPhoto,
+  addOperationPhotoUrl,
   removeOperationPhoto,
   setCoverPhoto,
+  normalizePhotoUrl,
   type OperationInput,
 } from "@/lib/services/operations";
 import { discardClosureDraft, prepareClosure, validateClosure } from "@/lib/services/closure";
@@ -45,7 +47,16 @@ const operationSchema = z.object({
   condition: z.string().trim().min(1, "État requis"),
   damageDescription: z.string().trim().min(1, "Dommages requis"),
   location: z.string().trim().min(1, "Localisation requise"),
-  photos: z.string().optional().transform((v) => (v ?? "").split(/\s+/).filter((u) => /^https?:\/\//.test(u)).slice(0, 12)),
+  photos: z.string().optional().transform((v, ctx) => {
+    const links = (v ?? "").split(/\s+/).filter(Boolean);
+    if (links.length > 12) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "12 photos maximum." });
+    try {
+      return [...new Set(links.map(normalizePhotoUrl))].slice(0, 12);
+    } catch (e) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: e instanceof Error ? e.message : "Lien invalide." });
+      return z.NEVER;
+    }
+  }),
   companyContribution: moneyField("Contribution de l'entreprise"),
   investorTarget: moneyField("Montant recherché"),
   minInvestment: moneyField("Minimum"),
@@ -373,5 +384,17 @@ export async function coverPhotoAction(_: ActionState, fd: FormData): Promise<Ac
     await setCoverPhoto(actor, id, str(fd, "url"));
     revalidatePath(`/admin/operations/${id}`);
     return "Photo de couverture modifiée.";
+  });
+}
+
+export async function addPhotoLinkAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.manage");
+    const id = str(fd, "operationId");
+    const links = str(fd, "url").split(/\s+/).filter(Boolean);
+    if (!links.length) throw new DomainError("EMPTY", "Collez au moins un lien.");
+    for (const link of links) await addOperationPhotoUrl(actor, id, link);
+    revalidatePath(`/admin/operations/${id}`);
+    return links.length > 1 ? `${links.length} photos ajoutées.` : "Photo ajoutée.";
   });
 }

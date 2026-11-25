@@ -2,10 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { DomainError } from "@/lib/errors";
-import { addOperationPhoto, removeOperationPhoto, setCoverPhoto } from "@/lib/services/operations";
+import { addOperationPhoto, addOperationPhotoUrl, createOperation, removeOperationPhoto, setCoverPhoto } from "@/lib/services/operations";
 import { detectImageType } from "@/lib/storage";
 import type { Actor } from "@/lib/services/types";
-import { makeUser, openOperation, resetDb } from "./helpers";
+import { baseOperation, makeUser, openOperation, resetDb } from "./helpers";
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 2, 3]);
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
@@ -74,5 +74,26 @@ describe("photos", () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     const op = await openOperation(admin);
     expect(await code(addOperationPhoto(admin, op.id, JPEG))).toBe("STORAGE_OFF");
+  });
+
+  it("ajout par lien, mélangé aux fichiers ; supprimer un lien n'appelle pas le stockage", async () => {
+    const op = await openOperation(admin);
+    const file = await addOperationPhoto(admin, op.id, JPEG);
+    const link = await addOperationPhotoUrl(admin, op.id, "  https://exemple.com/voiture.jpg ");
+    expect(link).toBe("https://exemple.com/voiture.jpg");
+    expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: op.vehicleId } })).photos).toEqual([file, link]);
+    expect(await code(addOperationPhotoUrl(admin, op.id, "https://exemple.com/voiture.jpg"))).toBe("DUPLICATE");
+    expect(await code(addOperationPhotoUrl(admin, op.id, "javascript:alert(1)"))).toBe("BAD_URL");
+    expect(await code(addOperationPhotoUrl(admin, op.id, "pas un lien"))).toBe("BAD_URL");
+    const before = calls.length;
+    await removeOperationPhoto(admin, op.id, link);
+    expect(calls.length).toBe(before);
+  });
+
+  it("liens fournis à la création, sans configuration du stockage", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const op = await createOperation(admin, baseOperation({ photos: ["https://exemple.com/a.jpg"] }));
+    await addOperationPhotoUrl(admin, op.id, "https://exemple.com/b.jpg");
+    expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: op.vehicleId } })).photos).toEqual(["https://exemple.com/a.jpg", "https://exemple.com/b.jpg"]);
   });
 });

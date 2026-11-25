@@ -31,7 +31,12 @@ export function OperationForm({
           <Field label="Localisation" name="location" defaultValue={v?.location} required />
         </div>
         <TextArea label="Description des dommages" name="damageDescription" defaultValue={v?.damageDescription} required />
-        <p className="text-sm text-muted">Les photos s&apos;ajoutent depuis la page de l&apos;opération, une fois le brouillon créé.</p>
+        {!op ? (
+          <TextArea label="Liens des photos (facultatif, un par ligne)" name="photos"
+            hint="Vous pourrez aussi envoyer des photos depuis votre ordinateur ou votre téléphone sur la page de l'opération, une fois le brouillon créé." />
+        ) : (
+          <p className="text-sm text-muted">Les photos (liens ou fichiers) se gèrent dans la section « Photos du véhicule » de la page.</p>
+        )}
       </fieldset>
 
       <fieldset className="card space-y-4">

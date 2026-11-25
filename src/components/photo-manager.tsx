@@ -32,6 +32,7 @@ export function PhotoManager(props: {
   max: number;
   enabled: boolean;
   upload: Act;
+  addLink: Act;
   remove: Act;
   cover: Act;
 }) {
@@ -40,6 +41,21 @@ export function PhotoManager(props: {
   const [progress, setProgress] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
+  const [link, setLink] = useState("");
+  const [broken, setBroken] = useState<Set<string>>(new Set());
+
+  function addLink() {
+    if (!link.trim()) return;
+    const fd = new FormData();
+    fd.set("operationId", props.operationId);
+    fd.set("url", link);
+    startTransition(async () => {
+      const res = await props.addLink(null, fd);
+      setErrors(res?.error ? [res.error] : []);
+      if (!res?.error) setLink("");
+      router.refresh();
+    });
+  }
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -86,7 +102,15 @@ export function PhotoManager(props: {
             <li key={url} className="overflow-hidden rounded-lg border border-line bg-white">
               <div className="relative aspect-[4/3] bg-gray-100">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" loading="lazy" />
+                {broken.has(url) ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-1 p-3 text-center text-xs text-red-700">
+                    <strong>Image introuvable</strong>
+                    <span className="break-all text-muted">{url.slice(0, 80)}</span>
+                  </div>
+                ) : (
+                  <img src={url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" loading="lazy"
+                    onError={() => setBroken((b) => new Set(b).add(url))} />
+                )}
                 {i === 0 && <span className="absolute left-2 top-2 rounded bg-ink px-2 py-0.5 text-xs font-semibold text-white">Couverture</span>}
               </div>
               <div className="flex gap-1 p-2">
@@ -106,32 +130,63 @@ export function PhotoManager(props: {
         <p className="text-sm text-muted">Aucune photo pour l&apos;instant.</p>
       )}
 
-      {props.enabled ? (
-        props.photos.length < props.max && (
+      {props.photos.length < props.max && (
+        <div className="grid gap-4 rounded-lg bg-paper p-4 md:grid-cols-2">
           <div>
-            <label className="btn-primary cursor-pointer" aria-disabled={busy}>
-              {progress ?? "Ajouter des photos"}
-              <input
-                ref={input}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                className="sr-only"
-                disabled={busy}
-                onChange={(e) => onFiles(e.target.files)}
-              />
-            </label>
-            <p className="mt-2 text-xs text-muted">
-              JPEG, PNG ou WebP. Plusieurs fichiers à la fois, depuis l&apos;ordinateur ou le téléphone. Les images sont
-              réduites automatiquement avant l&apos;envoi. {props.photos.length} / {props.max}.
-            </p>
+            <div className="mb-2 text-sm font-semibold text-ink">Envoyer des fichiers</div>
+            {props.enabled ? (
+              <>
+                <label className="btn-primary cursor-pointer" aria-disabled={busy}>
+                  {progress ?? "Choisir des photos"}
+                  <input
+                    ref={input}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    className="sr-only"
+                    disabled={busy}
+                    onChange={(e) => onFiles(e.target.files)}
+                  />
+                </label>
+                <p className="mt-2 text-xs text-muted">
+                  JPEG, PNG ou WebP, depuis l&apos;ordinateur ou le téléphone. Réduites automatiquement avant l&apos;envoi.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-amber-900">
+                Envoi de fichiers indisponible : ajoutez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY aux variables
+                d&apos;environnement. L&apos;ajout par lien reste possible.
+              </p>
+            )}
           </div>
-        )
-      ) : (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Stockage des photos non configuré : ajoutez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY aux variables d&apos;environnement.
-        </p>
+          <div>
+            <label htmlFor="photo-link" className="mb-2 block text-sm font-semibold text-ink">Ou ajouter par lien</label>
+            <div className="flex gap-2">
+              <input
+                id="photo-link"
+                type="url"
+                inputMode="url"
+                placeholder="https://…/photo.jpg"
+                className="input"
+                value={link}
+                disabled={busy}
+                onChange={(e) => setLink(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLink();
+                  }
+                }}
+              />
+              <button type="button" className="btn-ghost" disabled={busy || !link.trim()} onClick={addLink}>
+                Ajouter
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-muted">Lien direct vers une image (http:// ou https://). Plusieurs liens séparés par un espace.</p>
+          </div>
+        </div>
       )}
+      <p className="text-xs text-muted">{props.photos.length} / {props.max} photos.</p>
       {errors.length > 0 && (
         <ul role="alert" className="space-y-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {errors.map((e) => <li key={e}>{e}</li>)}
