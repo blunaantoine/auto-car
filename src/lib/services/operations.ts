@@ -5,6 +5,7 @@ import { canTransition, isFinanciallyLocked, STATUS_LABELS } from "../domain/ope
 import { DomainError } from "../errors";
 import { getOperationPool, getUserWallet, postTransaction } from "../ledger/ledger";
 import { formatMoney } from "../money";
+import { deleteStoredPhoto, MAX_PHOTOS, uploadVehiclePhoto } from "../storage";
 import { audit, notify } from "./audit";
 import { getSetting } from "./settings";
 import { requirePermission, type Actor } from "./types";
@@ -115,7 +116,6 @@ export async function updateOperation(actor: Actor, operationId: string, input: 
         condition: input.condition,
         damageDescription: input.damageDescription,
         location: input.location,
-        photos: input.photos,
       },
     });
     await tx.budgetLine.deleteMany({ where: { operationId } });
@@ -346,7 +346,6 @@ export interface OperationDetailsInput {
   condition: string;
   damageDescription: string;
   location: string;
-  photos: string[];
   estimatedDurationDays: number | null;
 }
 
@@ -369,13 +368,13 @@ export async function editOperationDetails(actor: Actor, operationId: string, in
     const before = {
       title: op.title, description: op.description, risks: op.risks, estimatedDurationDays: op.estimatedDurationDays,
       make: op.vehicle.make, model: op.vehicle.model, year: op.vehicle.year, condition: op.vehicle.condition,
-      damageDescription: op.vehicle.damageDescription, location: op.vehicle.location, photos: op.vehicle.photos,
+      damageDescription: op.vehicle.damageDescription, location: op.vehicle.location,
     };
     await tx.vehicle.update({
       where: { id: op.vehicleId },
       data: {
         make: input.make, model: input.model, year: input.year, condition: input.condition,
-        damageDescription: input.damageDescription, location: input.location, photos: input.photos,
+        damageDescription: input.damageDescription, location: input.location,
       },
     });
     await tx.operation.update({
@@ -469,5 +468,59 @@ export async function correctOperationFinancials(actor: Actor, operationId: stri
       `Les conditions financières de l'opération ont été corrigées (contribution de l'entreprise : ${formatMoney(input.companyContribution)}, montant recherché : ${formatMoney(input.investorTarget)}). Motif : ${reason}`,
       op.slug,
     );
+  });
+}
+
+// ─────────────────────────── Photos du véhicule ───────────────────────────
+
+async function photoTarget(tx: Tx, operationId: string) {
+  const op = await tx.operation.findUnique({ where: { id: operationId } });
+  if (!op) throw new DomainError("NOT_FOUND", "Opération introuvable.");
+  if (op.status === "ARCHIVED") throw new DomainError("LOCKED", "Une opération archivée ne peut plus être modifiée.");
+  await tx.$queryRaw`SELECT id FROM "Vehicle" WHERE id = ${op.vehicleId} FOR UPDATE`;
+  const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: op.vehicleId } });
+  return { op, vehicle };
+}
+
+/** Envoie une photo dans le stockage puis l'ajoute à la fiche (la première devient la couverture). */
+export async function addOperationPhoto(actor: Actor, operationId: string, bytes: Uint8Array) {
+  requirePermission(actor, "operations.manage");
+  const current = await prisma.operation.findUnique({ where: { id: operationId }, include: { vehicle: true } });
+  if (!current) throw new DomainError("NOT_FOUND", "Opération introuvable.");
+  if (current.vehicle.photos.length >= MAX_PHOTOS) throw new DomainError("TOO_MANY", `${MAX_PHOTOS} photos maximum par véhicule.`);
+  const url = await uploadVehiclePhoto(operationId, bytes);
+  try {
+    await inTransaction(async (tx) => {
+      const { op, vehicle } = await photoTarget(tx, operationId);
+      if (vehicle.photos.length >= MAX_PHOTOS) throw new DomainError("TOO_MANY", `${MAX_PHOTOS} photos maximum par véhicule.`);
+      await tx.vehicle.update({ where: { id: vehicle.id }, data: { photos: [...vehicle.photos, url] } });
+      await audit(tx, actor, { action: "operation.photo.add", entityType: "Operation", entityId: op.id, after: { url } });
+    });
+  } catch (e) {
+    await deleteStoredPhoto(url);
+    throw e;
+  }
+  return url;
+}
+
+export async function removeOperationPhoto(actor: Actor, operationId: string, url: string) {
+  requirePermission(actor, "operations.manage");
+  await inTransaction(async (tx) => {
+    const { op, vehicle } = await photoTarget(tx, operationId);
+    if (!vehicle.photos.includes(url)) throw new DomainError("NOT_FOUND", "Photo introuvable.");
+    await tx.vehicle.update({ where: { id: vehicle.id }, data: { photos: vehicle.photos.filter((p) => p !== url) } });
+    await audit(tx, actor, { action: "operation.photo.remove", entityType: "Operation", entityId: op.id, before: { url } });
+  });
+  await deleteStoredPhoto(url);
+}
+
+/** Place une photo en première position (photo de couverture du catalogue). */
+export async function setCoverPhoto(actor: Actor, operationId: string, url: string) {
+  requirePermission(actor, "operations.manage");
+  await inTransaction(async (tx) => {
+    const { op, vehicle } = await photoTarget(tx, operationId);
+    if (!vehicle.photos.includes(url)) throw new DomainError("NOT_FOUND", "Photo introuvable.");
+    await tx.vehicle.update({ where: { id: vehicle.id }, data: { photos: [url, ...vehicle.photos.filter((p) => p !== url)] } });
+    await audit(tx, actor, { action: "operation.photo.cover", entityType: "Operation", entityId: op.id, after: { url } });
   });
 }

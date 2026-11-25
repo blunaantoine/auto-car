@@ -23,7 +23,12 @@ import {
   validateClosureAction,
   editDetailsAction,
   correctFinancialsAction,
+  uploadPhotoAction,
+  removePhotoAction,
+  coverPhotoAction,
 } from "@/app/actions/admin";
+import { PhotoManager } from "@/components/photo-manager";
+import { MAX_PHOTOS, storageConfigured } from "@/lib/storage";
 import { ActionForm, Field, TextArea } from "@/components/action-form";
 import { FinancialsCorrectionForm, OperationDetailsForm, OperationForm } from "@/components/operation-form";
 import { Badge, KeyValue, Notice, PageHeader, Progress, Section, StatusBadge } from "@/components/ui";
@@ -123,6 +128,20 @@ export default async function AdminOperation({ params }: { params: Promise<{ id:
               </details>
             )}
           </Section>
+
+          {manage && op.status !== "ARCHIVED" && (
+            <Section title={`Photos du véhicule (${op.vehicle.photos.length})`}>
+              <PhotoManager
+                operationId={op.id}
+                photos={op.vehicle.photos}
+                max={MAX_PHOTOS}
+                enabled={storageConfigured()}
+                upload={uploadPhotoAction}
+                remove={removePhotoAction}
+                cover={coverPhotoAction}
+              />
+            </Section>
+          )}
 
           {canFixDetails && (
             <details className="card">

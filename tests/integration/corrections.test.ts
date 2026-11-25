@@ -24,7 +24,7 @@ beforeEach(async () => {
 const details = (title: string) => {
   const b = baseOperation();
   return { title, description: b.description, risks: b.risks, make: b.make, model: b.model, year: 2016, condition: b.condition,
-    damageDescription: b.damageDescription, location: b.location, photos: ["https://example.com/a.jpg"], estimatedDurationDays: 90 };
+    damageDescription: b.damageDescription, location: b.location, estimatedDurationDays: 90 };
 };
 const money = (over: Partial<{ companyContribution: bigint; investorTarget: bigint }> = {}) => ({
   companyContribution: 1_000_000n, investorTarget: 500_000n, minInvestment: 2_500n, maxPerInvestor: null, budgetLines: [], ...over,
@@ -40,7 +40,7 @@ describe("correction de la fiche après publication", () => {
     await editOperationDetails(admin, op.id, details("Nouveau titre"), "Faute de frappe");
     const after = await prisma.operation.findUniqueOrThrow({ where: { id: op.id }, include: { vehicle: true } });
     expect(after.title).toBe("Nouveau titre");
-    expect(after.vehicle.photos).toEqual(["https://example.com/a.jpg"]);
+    expect(after.estimatedDurationDays).toBe(90);
     expect(await prisma.notification.count({ where: { userId: u.id, title: { startsWith: "Fiche corrigée" } } })).toBe(1);
     expect(await prisma.auditLog.count({ where: { action: "operation.details.correct" } })).toBe(1);
   });

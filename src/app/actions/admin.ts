@@ -21,6 +21,9 @@ import {
   updateOperation,
   editOperationDetails,
   correctOperationFinancials,
+  addOperationPhoto,
+  removeOperationPhoto,
+  setCoverPhoto,
   type OperationInput,
 } from "@/lib/services/operations";
 import { discardClosureDraft, prepareClosure, validateClosure } from "@/lib/services/closure";
@@ -273,7 +276,7 @@ export async function countryAction(_: ActionState, fd: FormData): Promise<Actio
 
 const detailsSchema = operationSchema.pick({
   title: true, description: true, risks: true, make: true, model: true, year: true,
-  condition: true, damageDescription: true, location: true, photos: true, estimatedDurationDays: true,
+  condition: true, damageDescription: true, location: true, estimatedDurationDays: true,
 });
 
 export async function editDetailsAction(_: ActionState, fd: FormData): Promise<ActionState> {
@@ -336,5 +339,39 @@ export async function resetPasswordAction(_: ActionState, fd: FormData): Promise
     const actor = await requireActor("staff.manage");
     const temp = await adminResetPassword(actor, str(fd, "userId"), str(fd, "reason"));
     return `Mot de passe temporaire : ${temp} — communiquez-le à l'utilisateur par un canal sûr. Il ne sera plus affiché.`;
+  });
+}
+
+// ─────────────────────────── Photos ───────────────────────────
+
+export async function uploadPhotoAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.manage");
+    const id = str(fd, "operationId");
+    const file = fd.get("photo");
+    if (!(file instanceof File) || file.size === 0) throw new DomainError("EMPTY", "Aucune image reçue.");
+    await addOperationPhoto(actor, id, new Uint8Array(await file.arrayBuffer()));
+    revalidatePath(`/admin/operations/${id}`);
+    return "Photo ajoutée.";
+  });
+}
+
+export async function removePhotoAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.manage");
+    const id = str(fd, "operationId");
+    await removeOperationPhoto(actor, id, str(fd, "url"));
+    revalidatePath(`/admin/operations/${id}`);
+    return "Photo supprimée.";
+  });
+}
+
+export async function coverPhotoAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const actor = await requireActor("operations.manage");
+    const id = str(fd, "operationId");
+    await setCoverPhoto(actor, id, str(fd, "url"));
+    revalidatePath(`/admin/operations/${id}`);
+    return "Photo de couverture modifiée.";
   });
 }

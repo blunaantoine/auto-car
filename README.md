@@ -37,6 +37,10 @@ Les données de démo contiennent l'exemple du CDC de bout en bout : opération 
 | `DATABASE_URL` | Supabase → Connect → *Transaction pooler* (port 6543), en ajoutant `?pgbouncer=true&connection_limit=1` |
 | `DIRECT_URL` | Supabase → Connect → *Session pooler* (port 5432) |
 | `DEV_SHOW_VERIFICATION_CODES` | `true` sur la version test uniquement (aucun e-mail n'est envoyé) |
+| `SUPABASE_URL` | `https://pghuascoofqnaqslukec.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API Keys → clé secrète (envoi des photos, serveur uniquement) |
+
+Photos : bucket public `vehicle-photos` (5 Mo max, JPEG/PNG/WebP). Les images sont réduites à 1920 px dans le navigateur avant l'envoi ; le serveur vérifie le vrai format du fichier.
 
 Pour une nouvelle migration : `DATABASE_URL=… DIRECT_URL=… npx prisma migrate deploy` depuis un poste qui a accès à Supabase.
 

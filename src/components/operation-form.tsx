@@ -31,7 +31,7 @@ export function OperationForm({
           <Field label="Localisation" name="location" defaultValue={v?.location} required />
         </div>
         <TextArea label="Description des dommages" name="damageDescription" defaultValue={v?.damageDescription} required />
-        <TextArea label="Photos (une URL par ligne)" name="photos" defaultValue={v?.photos.join("\n")} hint="Photos récentes du véhicule. Le stockage privé des fichiers arrive avec la gestion documentaire." />
+        <p className="text-sm text-muted">Les photos s&apos;ajoutent depuis la page de l&apos;opération, une fois le brouillon créé.</p>
       </fieldset>
 
       <fieldset className="card space-y-4">
@@ -85,7 +85,6 @@ export function OperationDetailsForm({ action, op }: { action: Act; op: Op }) {
       <TextArea label="Description des dommages" name="damageDescription" defaultValue={v.damageDescription} required />
       <TextArea label="Description" name="description" defaultValue={op.description} required />
       <TextArea label="Risques" name="risks" defaultValue={op.risks} required />
-      <TextArea label="Photos (une URL par ligne)" name="photos" defaultValue={v.photos.join("\n")} />
       <TextArea label="Motif de la correction (visible par les investisseurs)" name="reason" rows={2} required />
     </ActionForm>
   );

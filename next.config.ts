@@ -10,6 +10,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["bcryptjs"],
+  // Les photos sont redimensionnées dans le navigateur avant l'envoi (Vercel limite les requêtes à 4,5 Mo).
+  experimental: { serverActions: { bodySizeLimit: "5mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
