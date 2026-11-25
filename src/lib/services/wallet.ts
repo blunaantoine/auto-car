@@ -9,13 +9,14 @@ import { requirePermission, type Actor } from "./types";
 export async function getWalletSummary(userId: string) {
   const wallet = await prisma.ledgerAccount.findUnique({ where: { userId } });
   const available = wallet ? await accountBalance(prisma, wallet.id) : 0n;
-  const [invested, claimable] = await Promise.all([
+  const [invested, claimable, pending] = await Promise.all([
     prisma.investment.aggregate({ where: { userId, status: "ACTIVE" }, _sum: { amount: true } }),
     prisma.investorSettlement.aggregate({ where: { userId, status: "CLAIMABLE" }, _sum: { claimable: true } }),
+    prisma.depositRequest.aggregate({ where: { userId, status: { in: ["AWAITING_AGENT", "CONFIRMED_BY_AGENT", "DISPUTED"] } }, _sum: { amountCredited: true } }),
   ]);
   return {
     available,
-    pending: 0n, // dépôts en attente / retraits réservés : phase 3
+    pending: pending._sum.amountCredited ?? 0n, // dépôts déclarés, non encore crédités : jamais investissables
     invested: invested._sum.amount ?? 0n,
     claimable: claimable._sum.claimable ?? 0n,
   };

@@ -19,6 +19,11 @@ export const PERMISSIONS = {
   "audit.read": ["ADMIN", "FINANCE", "SUPER_ADMIN"],
   "ledger.read": ["ADMIN", "FINANCE", "SUPER_ADMIN"],
   "backoffice.access": ["ADMIN", "FINANCE", "SUPER_ADMIN"],
+  // agents locaux et dépôts (CDC §9, §11, §12)
+  "agent.access": ["AGENT"],
+  "agents.manage": ["ADMIN", "SUPER_ADMIN"],
+  "deposits.review": ["FINANCE", "SUPER_ADMIN"],
+  "rates.manage": ["FINANCE", "SUPER_ADMIN"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

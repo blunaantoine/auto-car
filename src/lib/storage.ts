@@ -80,3 +80,38 @@ export async function deleteStoredPhoto(url: string): Promise<void> {
   const res = await fetch(`${cfg.url}/storage/v1/object/${PHOTO_BUCKET}/${path}`, { method: "DELETE", headers: headers(cfg.key) });
   if (!res.ok) console.error("[storage] delete", res.status, await res.text().catch(() => ""));
 }
+
+// ─────────────── Stockage privé (preuves de paiement) : lecture par lien signé temporaire ───────────────
+
+export const PROOF_BUCKET = "deposit-proofs";
+
+export async function uploadPrivateImage(bucket: string, prefix: string, bytes: Uint8Array): Promise<string> {
+  const cfg = config();
+  if (!cfg) throw new DomainError("STORAGE_OFF", "Le stockage des fichiers n'est pas configuré.");
+  const type = validatePhoto(bytes);
+  const path = `${prefix}/${randomUUID()}.${TYPES[type].ext}`;
+  const res = await fetch(`${cfg.url}/storage/v1/object/${bucket}/${path}`, {
+    method: "POST",
+    headers: { ...headers(cfg.key), "Content-Type": type, "x-upsert": "false" },
+    body: Buffer.from(bytes),
+  });
+  if (!res.ok) {
+    console.error("[storage] upload privé", res.status, await res.text().catch(() => ""));
+    throw new DomainError("UPLOAD_FAILED", "L'envoi du fichier a échoué. Réessayez.");
+  }
+  return path;
+}
+
+/** Lien de lecture valable quelques minutes, pour un fichier privé. */
+export async function signedUrl(bucket: string, path: string, expiresIn = 300): Promise<string | null> {
+  const cfg = config();
+  if (!cfg) return null;
+  const res = await fetch(`${cfg.url}/storage/v1/object/sign/${bucket}/${path}`, {
+    method: "POST",
+    headers: { ...headers(cfg.key), "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json().catch(() => null)) as { signedURL?: string } | null;
+  return data?.signedURL ? `${cfg.url}/storage/v1${data.signedURL}` : null;
+}

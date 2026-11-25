@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   url       = env("DATABASE_URL") // Supabase : pooler (port 6543, ?pgbouncer=true)
   directUrl = env("DIRECT_URL") // Supabase : connexion directe/session (port 5432) pour les migrations
 }
@@ -51,6 +51,8 @@ model User {
   investments       Investment[]
   settlements       InvestorSettlement[]
   notifications     Notification[]
+  agent             Agent?
+  depositRequests   DepositRequest[]
   loginEvents       LoginEvent[]
 }
 
@@ -112,7 +114,8 @@ model Country {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users  User[]
+  agents Agent[]
 }
 
 model Setting {
@@ -299,10 +302,10 @@ enum ClosureStatus {
 }
 
 model OperationClosure {
-  id                      String        @id @default(cuid())
-  operationId             String        @unique
-  operation               Operation     @relation(fields: [operationId], references: [id])
-  status                  ClosureStatus @default(DRAFT)
+  id                      String               @id @default(cuid())
+  operationId             String               @unique
+  operation               Operation            @relation(fields: [operationId], references: [id])
+  status                  ClosureStatus        @default(DRAFT)
   revenue                 BigInt // recettes (prix de vente)
   totalCosts              BigInt // somme des dépenses approuvées
   netResult               BigInt // B (peut être négatif)
@@ -314,10 +317,10 @@ model OperationClosure {
   lossRule                String
   formulaVersion          String
   preparedById            String
-  preparedAt              DateTime      @default(now())
+  preparedAt              DateTime             @default(now())
   validatedById           String?
   validatedAt             DateTime?
-  ledgerTransactionId     String?       @unique
+  ledgerTransactionId     String?              @unique
   settlements             InvestorSettlement[]
 }
 
@@ -441,4 +444,121 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt])
+}
+
+// ─────────────────────────── Agents locaux & dépôts (CDC §9, §11, §12) ───────────────────────────
+
+enum AgentStatus {
+  PENDING // en vérification
+  ACTIVE
+  UNAVAILABLE
+  SUSPENDED
+}
+
+model Agent {
+  id             String      @id @default(cuid())
+  userId         String      @unique
+  user           User        @relation(fields: [userId], references: [id])
+  displayName    String
+  countryCode    String
+  country        Country     @relation(fields: [countryCode], references: [code])
+  city           String
+  zone           String?
+  status         AgentStatus @default(PENDING)
+  canDeposit     Boolean     @default(true)
+  canWithdraw    Boolean     @default(false)
+  hours          String?
+  instructions   String?
+  supportContact String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  paymentMethods AgentPaymentMethod[]
+  deposits       DepositRequest[]
+
+  @@index([countryCode, status])
+}
+
+model AgentPaymentMethod {
+  id            String   @id @default(cuid())
+  agentId       String
+  agent         Agent    @relation(fields: [agentId], references: [id])
+  provider      String // Flooz, T-Money, Orange Money, virement bancaire…
+  accountName   String // nom du bénéficiaire
+  accountNumber String // numéro ou identifiant de réception
+  currency      String // devise locale reçue (ISO 4217)
+  minAmount     BigInt // en devise locale
+  maxAmount     BigInt?
+  feeFixed      BigInt   @default(0) // frais fixes en devise locale
+  feeBps        Int      @default(0) // frais proportionnels en points de base (100 = 1 %)
+  delay         String? // délai indicatif
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deposits DepositRequest[]
+
+  @@index([agentId])
+}
+
+/// Taux de conversion vers la devise de référence (XOF). Jamais modifiés : on ajoute un nouveau taux.
+model ExchangeRate {
+  id          String   @id @default(cuid())
+  currency    String
+  rateToRef   Decimal  @db.Decimal(20, 8) // 1 unité de `currency` = rateToRef XOF
+  source      String
+  effectiveAt DateTime @default(now())
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([currency, effectiveAt])
+}
+
+enum DepositStatus {
+  AWAITING_AGENT // soumis, en attente de vérification par l'agent
+  CONFIRMED_BY_AGENT // réception confirmée, en attente de validation financière (au-delà du seuil)
+  CREDITED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  DISPUTED
+}
+
+model DepositRequest {
+  id                  String             @id @default(cuid())
+  reference           String             @unique
+  userId              String
+  user                User               @relation(fields: [userId], references: [id])
+  agentId             String
+  agent               Agent              @relation(fields: [agentId], references: [id])
+  methodId            String
+  method              AgentPaymentMethod @relation(fields: [methodId], references: [id])
+  countryCode         String
+  provider            String
+  currency            String
+  amountLocal         BigInt // montant envoyé par l'investisseur, devise locale
+  feeLocal            BigInt // frais en devise locale
+  rate                Decimal            @db.Decimal(20, 8) // taux appliqué, figé à la soumission
+  rateSource          String
+  amountCredited      BigInt // montant crédité en XOF
+  payerReference      String // référence de la transaction donnée par l'opérateur
+  payerAccount        String? // numéro / compte de l'émetteur
+  proofPath           String? // capture (stockage privé)
+  status              DepositStatus      @default(AWAITING_AGENT)
+  agentReference      String?
+  agentNote           String?
+  rejectReason        String?
+  reviewNote          String?
+  confirmedAt         DateTime?
+  confirmedById       String?
+  creditedAt          DateTime?
+  creditedById        String?
+  expiresAt           DateTime
+  ledgerTransactionId String?            @unique
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([agentId, status])
+  @@index([userId])
+  @@index([provider, payerReference])
 }

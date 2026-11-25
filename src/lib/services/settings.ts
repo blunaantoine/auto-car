@@ -10,6 +10,10 @@ export const SETTING_DEFAULTS = {
   MIN_DEPOSIT: "2500", // CDC §6.3
   MIN_INVESTMENT: "2500", // CDC §6.3
   TERMS_VERSION: "CG-2026-11-v1",
+  // au-delà de ce montant (XOF), un dépôt confirmé par l'agent doit être validé par un responsable financier
+  DEPOSIT_REVIEW_THRESHOLD: "500000",
+  // délai après lequel une demande de dépôt non traitée par l'agent expire
+  DEPOSIT_EXPIRY_HOURS: "72",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
@@ -36,7 +40,7 @@ export async function updateSetting(actor: Actor, key: SettingKey, value: string
   if (!reason.trim()) throw new DomainError("REASON_REQUIRED", "Un motif est obligatoire.");
   if (key === "LOSS_RULE" && !(LOSS_RULES as readonly string[]).includes(value))
     throw new DomainError("INVALID", "Règle de perte inconnue.");
-  if ((key === "MIN_DEPOSIT" || key === "MIN_INVESTMENT") && !/^\d+$/.test(value))
+  if (["MIN_DEPOSIT", "MIN_INVESTMENT", "DEPOSIT_REVIEW_THRESHOLD", "DEPOSIT_EXPIRY_HOURS"].includes(key) && !/^\d+$/.test(value))
     throw new DomainError("INVALID", "Montant invalide.");
   await prisma.$transaction(async (tx) => {
     const before = await getSetting(key, tx);
